@@ -1,0 +1,15 @@
+# Stage 1: Build Go binary
+FROM golang:1.22-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /dbstash ./cmd/dbstash
+
+# Stage 2: Runtime image with mysqldump + rclone
+ARG DB_VERSION=8
+FROM alpine:3.20
+RUN apk add --no-cache mysql-client rclone ca-certificates tzdata
+COPY --from=builder /dbstash /usr/local/bin/dbstash
+ENV ENGINE=mysql
+ENTRYPOINT ["dbstash"]

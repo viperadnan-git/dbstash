@@ -1,0 +1,51 @@
+services:
+  backup-pg:
+    image: ghcr.io/viperadnan/dbstash:pg-16
+    environment:
+      DB_URI_FILE: /run/secrets/pg_uri
+      RCLONE_REMOTE: "s3:my-bucket/backups/pg"
+      RCLONE_CONFIG_FILE: /run/secrets/rclone_conf
+      BACKUP_SCHEDULE: "0 */6 * * *"        # every 6 hours
+      BACKUP_NAME_TEMPLATE: "{db}-{date}-{time}"
+      BACKUP_TIMEOUT: "1h"
+      RETENTION_MAX_FILES: 20
+      RETENTION_MAX_DAYS: 30
+      HOOK_PRE_BACKUP: "echo 'Starting PG backup'"
+      NOTIFY_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      NOTIFY_ON: failure
+      LOG_LEVEL: info
+      TZ: Asia/Kolkata
+    secrets:
+      - pg_uri
+      - rclone_conf
+    restart: unless-stopped
+
+  backup-mongo:
+    image: ghcr.io/viperadnan/dbstash:mongo-7
+    environment:
+      # Individual vars also supported
+      DB_HOST: mongodb
+      DB_PORT: 27017
+      DB_NAME: analytics
+      DB_USER: root
+      DB_PASSWORD_FILE: /run/secrets/mongo_password
+      DB_AUTH_SOURCE: admin
+      RCLONE_REMOTE: "s3:my-bucket/backups/mongo"
+      RCLONE_CONFIG_FILE: /run/secrets/rclone_conf
+      BACKUP_SCHEDULE: "0 3 * * *"
+      RETENTION_MAX_DAYS: 14
+      NOTIFY_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      NOTIFY_ON: always
+      TZ: Asia/Kolkata
+    secrets:
+      - mongo_password
+      - rclone_conf
+    restart: unless-stopped
+
+secrets:
+  pg_uri:
+    file: ./secrets/pg_uri.txt
+  mongo_password:
+    file: ./secrets/mongo_password.txt
+  rclone_conf:
+    file: ./secrets/rclone.conf

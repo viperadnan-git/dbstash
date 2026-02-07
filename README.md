@@ -1,0 +1,232 @@
+# dbstash
+
+Dockerized database backup via rclone. Stream database dumps directly to any cloud storage backend without intermediate files or local disk pressure. Each Docker image targets a specific database engine and version, configured entirely through environment variables.
+
+## Quick Start
+
+```bash
+# One-time PostgreSQL backup to S3
+docker run --rm \
+  -e ENGINE=pg \
+  -e DB_URI="postgresql://user:pass@host:5432/mydb" \
+  -e RCLONE_REMOTE="s3:my-bucket/backups" \
+  -e RCLONE_CONFIG_FILE=/config/rclone.conf \
+  -e BACKUP_SCHEDULE=once \
+  -v /path/to/rclone.conf:/config/rclone.conf:ro \
+  ghcr.io/viperadnan/dbstash:pg-16
+```
+
+## Available Images
+
+| Database   | Engine Key | Example Tags              |
+|------------|------------|---------------------------|
+| PostgreSQL | `pg`       | `pg-15`, `pg-16`, `pg-17` |
+| MongoDB    | `mongo`    | `mongo-6`, `mongo-7`, `mongo-8` |
+| MySQL      | `mysql`    | `mysql-8`, `mysql-9`      |
+| MariaDB    | `mariadb`  | `mariadb-10`, `mariadb-11`|
+| Redis      | `redis`    | `redis-7`, `redis-8`      |
+
+All images are available at `ghcr.io/viperadnan/dbstash:<engine>-<version>`.
+
+## How It Works
+
+dbstash streams database dump output directly to rclone, avoiding local disk usage:
+
+```
+dump stdout --> rclone rcat remote:path/filename
+```
+
+No intermediate files are created on disk (in stream mode). The Go binary handles process piping, scheduling, retention cleanup, and notifications.
+
+## Docker Compose Example
+
+```yaml
+services:
+  backup-pg:
+    image: ghcr.io/viperadnan/dbstash:pg-16
+    environment:
+      DB_URI_FILE: /run/secrets/pg_uri
+      RCLONE_REMOTE: "s3:my-bucket/backups/pg"
+      RCLONE_CONFIG_FILE: /run/secrets/rclone_conf
+      BACKUP_SCHEDULE: "0 */6 * * *"
+      BACKUP_NAME_TEMPLATE: "{db}-{date}-{time}"
+      BACKUP_TIMEOUT: "1h"
+      RETENTION_MAX_FILES: 20
+      RETENTION_MAX_DAYS: 30
+      NOTIFY_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      NOTIFY_ON: failure
+      LOG_LEVEL: info
+      TZ: Asia/Kolkata
+    secrets:
+      - pg_uri
+      - rclone_conf
+    restart: unless-stopped
+
+secrets:
+  pg_uri:
+    file: ./secrets/pg_uri.txt
+  rclone_conf:
+    file: ./secrets/rclone.conf
+```
+
+## Environment Variables
+
+### Connection
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `DB_URI` | No* | — | Full connection URI (e.g. `postgresql://user:pass@host:5432/mydb`) |
+| `DB_URI_FILE` | No* | — | Path to a file containing the connection URI (Docker secrets) |
+| `DB_HOST` | No* | — | Database host |
+| `DB_PORT` | No | Engine default | Database port |
+| `DB_NAME` | No* | — | Database name |
+| `DB_USER` | No | — | Database user |
+| `DB_PASSWORD` | No | — | Database password |
+| `DB_PASSWORD_FILE` | No | — | Path to file containing the password (Docker secrets) |
+| `DB_AUTH_SOURCE` | No | `admin` | MongoDB auth database |
+
+*Either `DB_URI`/`DB_URI_FILE` **or** `DB_HOST` + `DB_NAME` must be provided.
+
+### Rclone
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `RCLONE_REMOTE` | Yes | — | Rclone remote path (e.g. `s3:my-bucket/backups`) |
+| `RCLONE_CONFIG` | No | — | Base64-encoded rclone.conf content |
+| `RCLONE_CONFIG_FILE` | No | `/config/rclone.conf` | Path to rclone config file |
+| `RCLONE_EXTRA_ARGS` | No | — | Additional rclone flags |
+
+### Schedule & Naming
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `BACKUP_SCHEDULE` | No | `0 2 * * *` | Cron expression or `once` for a single backup |
+| `BACKUP_MODE` | No | `stream` | `stream`, `directory`, or `tar` |
+| `BACKUP_NAME_TEMPLATE` | No | `{db}-{date}-{time}` | Filename template |
+| `BACKUP_COMPRESS` | No | `false` | Enable native compression via dump tool |
+| `BACKUP_EXTENSION` | No | auto | Override file extension |
+| `BACKUP_ON_START` | No | `false` | Run backup immediately on container start |
+| `BACKUP_TIMEOUT` | No | `0` | Max duration for a backup (e.g. `1h`, `30m`) |
+| `BACKUP_LOCK` | No | `true` | Prevent overlapping backup runs |
+| `BACKUP_TEMP_DIR` | No | `/tmp/dbstash-work` | Temp directory for directory/tar modes |
+| `DUMP_EXTRA_ARGS` | No | — | Additional flags for the dump tool |
+| `DRY_RUN` | No | `false` | Log config without executing |
+| `TZ` | No | `UTC` | Timezone for schedule and filenames |
+
+#### Name Template Tokens
+
+| Token | Expands To | Example |
+|---|---|---|
+| `{db}` | Database name | `myapp` |
+| `{engine}` | Engine key | `pg` |
+| `{date}` | `YYYY-MM-DD` | `2026-02-07` |
+| `{time}` | `HHmmss` | `020000` |
+| `{ts}` | Unix timestamp | `1770508800` |
+| `{uuid}` | Short UUID (8 chars) | `a1b2c3d4` |
+
+### Retention
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `RETENTION_MAX_FILES` | No | `0` (unlimited) | Keep at most N backup files |
+| `RETENTION_MAX_DAYS` | No | `0` (unlimited) | Delete backups older than N days |
+
+### Notifications
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `NOTIFY_WEBHOOK_URL` | No | — | Slack or Discord webhook URL |
+| `NOTIFY_ON` | No | `failure` | When to notify: `always`, `failure`, `success` |
+
+### Hooks
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `HOOK_PRE_BACKUP` | No | — | Shell command to run before backup |
+| `HOOK_POST_BACKUP` | No | — | Shell command to run after backup |
+
+Post-backup hooks receive `DBSTASH_STATUS` (`success`/`failure`) and `DBSTASH_FILE` (remote path) as environment variables.
+
+### Logging
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
+| `LOG_FORMAT` | No | `json` | `json` or `text` |
+
+## Backup Modes
+
+| Mode | `BACKUP_MODE` | How It Works | Disk Usage |
+|---|---|---|---|
+| **Stream** (default) | `stream` | Pipes dump stdout directly to `rclone rcat` | Zero |
+| **Directory** | `directory` | Dumps to temp dir, uploads via `rclone copy` | Requires temp space |
+| **Tar** | `tar` | Dumps to temp dir, tar streams to `rclone rcat` | Requires temp space |
+
+### Compression
+
+| Engine | `BACKUP_COMPRESS=true` | Manual via `DUMP_EXTRA_ARGS` |
+|---|---|---|
+| PostgreSQL | `--Fc` (custom format) | `--compress=zstd:9`, etc. |
+| MongoDB | `--gzip` | `--gzip` |
+| MySQL/MariaDB | No-op (warning logged) | — |
+| Redis | No change (RDB already compact) | — |
+
+## Encryption at Rest
+
+Use rclone's native `crypt` remote:
+
+```ini
+[s3-backup]
+type = s3
+provider = AWS
+access_key_id = ...
+secret_access_key = ...
+
+[s3-backup-encrypted]
+type = crypt
+remote = s3-backup:my-bucket/backups
+password = ... (obscured)
+```
+
+Set `RCLONE_REMOTE=s3-backup-encrypted:` and all backups are transparently encrypted.
+
+## Docker Secrets
+
+Any sensitive env var supports a `_FILE` suffix. dbstash reads the secret from the file at startup:
+
+```yaml
+services:
+  backup:
+    image: ghcr.io/viperadnan/dbstash:pg-16
+    environment:
+      DB_URI_FILE: /run/secrets/db_uri
+      RCLONE_CONFIG_FILE: /run/secrets/rclone_conf
+    secrets:
+      - db_uri
+      - rclone_conf
+
+secrets:
+  db_uri:
+    file: ./secrets/db_uri.txt
+  rclone_conf:
+    file: ./secrets/rclone.conf
+```
+
+Supported `_FILE` variants: `DB_URI_FILE`, `DB_PASSWORD_FILE`, `RCLONE_CONFIG_FILE`.
+
+## Health Check
+
+When running with a cron schedule, dbstash serves a health endpoint:
+
+```
+GET :8080/healthz
+```
+
+Returns:
+```json
+{"status": "healthy", "engine": "pg", "last_backup": "2026-02-07T02:00:05Z", "last_status": "success"}
+```
+
+## License
+
+MIT

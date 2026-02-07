@@ -1,0 +1,18 @@
+# Stage 1: Build Go binary
+FROM golang:1.22-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /dbstash ./cmd/dbstash
+
+# Stage 2: Runtime image with mongodump + rclone
+FROM alpine:3.20
+ARG MONGO_TOOLS_VERSION=100.10.0
+RUN apk add --no-cache ca-certificates tzdata curl && \
+    curl -fsSL "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)-${MONGO_TOOLS_VERSION}.tgz" \
+    | tar -xz -C /usr/local/bin --strip-components=2 --wildcards '*/bin/mongodump' && \
+    apk add --no-cache rclone
+COPY --from=builder /dbstash /usr/local/bin/dbstash
+ENV ENGINE=mongo
+ENTRYPOINT ["dbstash"]
