@@ -10,7 +10,6 @@ env:
   GHCR_REGISTRY: ghcr.io
   DOCKERHUB_REGISTRY: docker.io
   IMAGE_NAME: ${{ github.repository }}
-  DOCKERHUB_IMAGE: ${{ secrets.DOCKER_USERNAME }}/dbstash
 
 jobs:
   build:
@@ -18,6 +17,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      DOCKERHUB_IMAGE: ${{ secrets.DOCKER_USERNAME }}/dbstash
 
     strategy:
       matrix:
