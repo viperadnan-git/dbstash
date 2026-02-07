@@ -115,14 +115,18 @@ secrets:
 
 #### Name Template Tokens
 
+The `BACKUP_NAME_TEMPLATE` value is expanded at backup time by replacing tokens with runtime values. The file extension is appended automatically based on the engine and compression setting (override with `BACKUP_EXTENSION`). All timestamps respect the `TZ` environment variable (default `UTC`).
+
 | Token | Expands To | Example |
 |---|---|---|
-| `{db}` | Database name | `myapp` |
+| `{db}` | Database name from `DB_NAME` or parsed from `DB_URI` | `myapp` |
 | `{engine}` | Engine key | `pg` |
-| `{date}` | `YYYY-MM-DD` | `2026-02-07` |
-| `{time}` | `HHmmss` | `020000` |
-| `{ts}` | Unix timestamp | `1770508800` |
-| `{uuid}` | Short UUID (8 chars) | `a1b2c3d4` |
+| `{date}` | Current date as `YYYY-MM-DD` | `2026-02-07` |
+| `{time}` | Current time as `HHmmss` | `020000` |
+| `{ts}` | Unix timestamp in seconds | `1770508800` |
+| `{uuid}` | First 12 characters of a UUIDv7 (time-ordered, unique) | `01953528e5f6` |
+
+**Default template:** `{db}-{date}-{time}` produces filenames like `myapp-2026-02-07-020000.sql`.
 
 ### Retention
 
