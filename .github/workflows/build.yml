@@ -6,6 +6,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+concurrency:
+  group: build-and-push
+  cancel-in-progress: false
+
 env:
   GHCR_REGISTRY: ghcr.io
   DOCKERHUB_REGISTRY: docker.io
