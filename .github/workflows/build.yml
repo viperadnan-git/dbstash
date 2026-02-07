@@ -33,11 +33,11 @@ jobs:
             build_args: DB_VERSION=15
           - engine: pg
             version: "16"
-            is_default: true
             dockerfile: docker/Dockerfile.pg
             build_args: DB_VERSION=16
           - engine: pg
             version: "17"
+            is_latest: true
             dockerfile: docker/Dockerfile.pg
             build_args: DB_VERSION=17
           # MongoDB
@@ -46,16 +46,16 @@ jobs:
             dockerfile: docker/Dockerfile.mongo
           - engine: mongo
             version: "8"
-            is_default: true
+            is_latest: true
             dockerfile: docker/Dockerfile.mongo
           # MySQL
           - engine: mysql
             version: "8"
-            is_default: true
             dockerfile: docker/Dockerfile.mysql
             build_args: DB_VERSION=8
           - engine: mysql
             version: "9"
+            is_latest: true
             dockerfile: docker/Dockerfile.mysql
             build_args: DB_VERSION=9
           # MariaDB
@@ -67,7 +67,7 @@ jobs:
               ENGINE_NAME=mariadb
           - engine: mariadb
             version: "11"
-            is_default: true
+            is_latest: true
             dockerfile: docker/Dockerfile.mysql
             build_args: |
               DB_VERSION=11
@@ -75,11 +75,11 @@ jobs:
           # Redis
           - engine: redis
             version: "7"
-            is_default: true
             dockerfile: docker/Dockerfile.redis
             build_args: DB_VERSION=7
           - engine: redis
             version: "8"
+            is_latest: true
             dockerfile: docker/Dockerfile.redis
             build_args: DB_VERSION=8
 
@@ -121,8 +121,9 @@ jobs:
             ${{ env.DOCKERHUB_IMAGE }}
           tags: |
             type=raw,value=${{ matrix.engine }}-${{ matrix.version }}
-            type=raw,value=${{ matrix.engine }}-latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && matrix.is_default == 'true' }}
-            type=raw,value=${{ matrix.engine }},enable=${{ startsWith(github.ref, 'refs/tags/v') && matrix.is_default == 'true' }}
+            type=raw,value=${{ matrix.engine }}-latest,enable=${{ matrix.is_latest == true }}
+            type=raw,value=${{ matrix.engine }},enable=${{ matrix.is_latest == true }}
+            type=raw,value=${{ matrix.engine }}-${{ matrix.version }}-{{version}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
           labels: |
             org.opencontainers.image.title=dbstash
             org.opencontainers.image.description=Dockerized database backup via rclone. Stream dumps directly to any cloud storage.
@@ -149,7 +150,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.engine }}-${{ matrix.version }}
 
       - name: Update Docker Hub description
-        if: startsWith(github.ref, 'refs/tags/v') && matrix.engine == 'pg' && matrix.is_default == 'true'
+        if: matrix.engine == 'pg' && matrix.is_latest == true
         uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKER_USERNAME }}

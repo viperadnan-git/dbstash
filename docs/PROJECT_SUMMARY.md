@@ -23,7 +23,7 @@
 
 ## Image Naming & Tag Schema
 
-**Registry path:** `ghcr.io/viperadnan/dbstash` (or Docker Hub: `viperadnan/dbstash`)
+**Registry path:** `ghcr.io/viperadnan-git/dbstash` (or Docker Hub: `viperadnan/dbstash`)
 
 ### Tag Format
 
@@ -197,7 +197,7 @@ Any sensitive env var supports a `_FILE` suffix variant. When the `_FILE` varian
 ```yaml
 services:
   backup-pg:
-    image: ghcr.io/viperadnan/dbstash:pg-16
+    image: ghcr.io/viperadnan-git/dbstash:pg-16
     environment:
       DB_URI_FILE: /run/secrets/db_uri
       RCLONE_CONFIG_FILE: /run/secrets/rclone_conf
@@ -332,7 +332,7 @@ Default produces: `myapp-2026-02-07-020000.sql` (PostgreSQL) or `analytics-2026-
 ```yaml
 services:
   backup-pg:
-    image: ghcr.io/viperadnan/dbstash:pg-16
+    image: ghcr.io/viperadnan-git/dbstash:pg-16
     environment:
       DB_URI_FILE: /run/secrets/pg_uri
       RCLONE_REMOTE: "s3:my-bucket/backups/pg"
@@ -353,7 +353,7 @@ services:
     restart: unless-stopped
 
   backup-mongo:
-    image: ghcr.io/viperadnan/dbstash:mongo-7
+    image: ghcr.io/viperadnan-git/dbstash:mongo-7
     environment:
       # Individual vars also supported
       DB_HOST: mongodb

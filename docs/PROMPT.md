@@ -16,7 +16,7 @@ Implement **all milestones through v0.6** in a single pass. v0.7 features (email
 
 ### 1. Project Setup
 
-- Initialize a Go module: `github.com/viperadnan/dbstash`
+- Initialize a Go module: `github.com/viperadnan-git/dbstash`
 - Use Go 1.22+ with the project structure defined in the reference document exactly
 - Dependencies (use minimal, well-maintained libraries):
   - `github.com/robfig/cron/v3` — cron scheduler
@@ -242,7 +242,7 @@ FROM postgres:${DB_VERSION}-alpine
 
 - Trigger on push to `main` and tags `v*`
 - Matrix strategy as shown in the reference document
-- Steps: checkout, setup Go, build binary, login to GHCR, build + push Docker image with tags `ghcr.io/viperadnan/dbstash:<engine>-<version>`
+- Steps: checkout, setup Go, build binary, login to GHCR, build + push Docker image with tags `ghcr.io/viperadnan-git/dbstash:<engine>-<version>`
 - On tag push: also tag as `<engine>-latest`
 
 ### 14. `docker-compose.example.yml`

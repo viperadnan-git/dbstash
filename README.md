@@ -7,13 +7,12 @@ Dockerized database backup via rclone. Stream database dumps directly to any clo
 ```bash
 # One-time PostgreSQL backup to S3
 docker run --rm \
-  -e ENGINE=pg \
   -e DB_URI="postgresql://user:pass@host:5432/mydb" \
   -e RCLONE_REMOTE="s3:my-bucket/backups" \
   -e RCLONE_CONFIG_FILE=/config/rclone.conf \
   -e BACKUP_SCHEDULE=once \
   -v /path/to/rclone.conf:/config/rclone.conf:ro \
-  ghcr.io/viperadnan/dbstash:pg-16
+  ghcr.io/viperadnan-git/dbstash:pg-16
 ```
 
 ## Available Images
@@ -31,7 +30,7 @@ docker run --rm \
 - **`:engine`** (e.g. `:pg`) — recommended stable version (updated on new releases)
 - **`:engine-latest`** (e.g. `:pg-latest`) — latest supported version (may change)
 
-All images: `ghcr.io/viperadnan/dbstash:<tag>`
+All images: `ghcr.io/viperadnan-git/dbstash:<tag>`
 
 ## How It Works
 
@@ -48,7 +47,7 @@ No intermediate files are created on disk (in stream mode). The Go binary handle
 ```yaml
 services:
   backup-pg:
-    image: ghcr.io/viperadnan/dbstash:pg-16
+    image: ghcr.io/viperadnan-git/dbstash:pg-16
     environment:
       DB_URI_FILE: /run/secrets/pg_uri
       RCLONE_REMOTE: "s3:my-bucket/backups/pg"
@@ -206,7 +205,7 @@ Any sensitive env var supports a `_FILE` suffix. dbstash reads the secret from t
 ```yaml
 services:
   backup:
-    image: ghcr.io/viperadnan/dbstash:pg-16
+    image: ghcr.io/viperadnan-git/dbstash:pg-16
     environment:
       DB_URI_FILE: /run/secrets/db_uri
       RCLONE_CONFIG_FILE: /run/secrets/rclone_conf
