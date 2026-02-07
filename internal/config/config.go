@@ -105,7 +105,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("RCLONE_REMOTE is required")
 	}
 
-	cfg.RcloneConfigFile = resolveRcloneConfig()
+	rcloneConfigFile, err := resolveRcloneConfig()
+	if err != nil {
+		return nil, err
+	}
+	cfg.RcloneConfigFile = rcloneConfigFile
 	cfg.RcloneExtraArgs = envOrDefault("RCLONE_EXTRA_ARGS", "")
 
 	// Schedule
@@ -149,7 +153,7 @@ func Load() (*Config, error) {
 
 	// Logging
 	cfg.LogLevel = envOrDefault("LOG_LEVEL", "info")
-	cfg.LogFormat = envOrDefault("LOG_FORMAT", "json")
+	cfg.LogFormat = envOrDefault("LOG_FORMAT", "text")
 
 	// Hooks
 	cfg.HookPreBackup = envOrDefault("HOOK_PRE_BACKUP", "")
@@ -225,8 +229,8 @@ func resolveFileVar(baseVar, fileVar string) string {
 }
 
 // resolveRcloneConfig handles RCLONE_CONFIG (base64), RCLONE_CONFIG_FILE,
-// and the default path.
-func resolveRcloneConfig() string {
+// and the default path. It validates that the config file exists.
+func resolveRcloneConfig() (string, error) {
 	// Check _FILE variant first
 	filePath := resolveFileVar("RCLONE_CONFIG_FILE", "")
 	if filePath == "" {
@@ -242,15 +246,25 @@ func resolveRcloneConfig() string {
 			if err == nil {
 				tmpFile.Write(decoded)
 				tmpFile.Close()
-				return tmpFile.Name()
+				// Temp file was just created, so it exists
+				return tmpFile.Name(), nil
 			}
 		}
 	}
 
-	if filePath != "" {
-		return filePath
+	if filePath == "" {
+		filePath = "/config/rclone.conf"
 	}
-	return "/config/rclone.conf"
+
+	// Validate that the config file exists
+	if _, err := os.Stat(filePath); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("rclone config file not found at %q. Please set RCLONE_CONFIG_FILE to a valid path", filePath)
+		}
+		return "", fmt.Errorf("cannot access rclone config file at %q: %w", filePath, err)
+	}
+
+	return filePath, nil
 }
 
 func envOrDefault(key, fallback string) string {

@@ -183,7 +183,7 @@ Post-backup hooks receive `DBSTASH_STATUS` (`success`/`failure`) and `DBSTASH_FI
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
-| `LOG_FORMAT` | No | `json` | `json` or `text` |
+| `LOG_FORMAT` | No | `text` | `json` or `text` |
 
 ## Backup Modes
 

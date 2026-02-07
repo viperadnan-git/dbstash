@@ -47,23 +47,33 @@ func (p *StreamPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *co
 	var dumpStderr bytes.Buffer
 	dumpCmd.Stderr = &dumpStderr
 
+	log.Debug().Str("dump_cmd", dumpCmd.String()).Msg("executing dump command")
+	log.Debug().Strs("rclone_args", rcloneArgs).Msg("executing rclone command")
+
 	// Start rclone first, then dump
+	log.Debug().Msg("starting rclone process")
 	if err := rcloneCmd.Start(); err != nil {
 		return "", 0, fmt.Errorf("starting rclone: %w", err)
 	}
 
+	log.Debug().Msg("starting dump process")
 	if err := dumpCmd.Start(); err != nil {
 		pw.Close()
 		rcloneCmd.Wait()
 		return "", 0, fmt.Errorf("starting dump: %w", err)
 	}
 
+	log.Debug().Msg("waiting for dump to complete")
+
 	// Wait for dump to finish, then close the pipe
 	dumpErr := dumpCmd.Wait()
+	log.Debug().Err(dumpErr).Msg("dump process finished")
 	pw.Close()
 
 	// Wait for rclone to finish
+	log.Debug().Msg("waiting for rclone to complete")
 	rcloneErr := rcloneCmd.Wait()
+	log.Debug().Err(rcloneErr).Msg("rclone process finished")
 	pr.Close()
 
 	if dumpErr != nil {

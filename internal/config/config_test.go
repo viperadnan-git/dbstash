@@ -22,16 +22,22 @@ func clearEnv() {
 	}
 }
 
-func setMinimalEnv() {
+func setMinimalEnv(t *testing.T) {
 	os.Setenv("ENGINE", "pg")
 	os.Setenv("DB_HOST", "localhost")
 	os.Setenv("DB_NAME", "testdb")
 	os.Setenv("RCLONE_REMOTE", "s3:my-bucket/backups")
+
+	// Create temporary rclone config file
+	dir := t.TempDir()
+	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
+	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
+	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
 }
 
 func TestLoad_MinimalConfig(t *testing.T) {
 	clearEnv()
-	setMinimalEnv()
+	setMinimalEnv(t)
 
 	cfg, err := Load()
 	if err != nil {
@@ -115,6 +121,12 @@ func TestLoad_DBURI(t *testing.T) {
 	os.Setenv("DB_URI", "mongodb://user:pass@host:27017/mydb")
 	os.Setenv("RCLONE_REMOTE", "s3:bucket")
 
+	// Create temporary rclone config file
+	dir := t.TempDir()
+	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
+	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
+	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
+
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -132,9 +144,14 @@ func TestLoad_FileVariant(t *testing.T) {
 	uriFile := filepath.Join(dir, "db_uri.txt")
 	os.WriteFile(uriFile, []byte("postgresql://user:secret@dbhost:5432/prod\n"), 0o644)
 
+	// Create temporary rclone config file
+	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
+	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
+
 	os.Setenv("ENGINE", "pg")
 	os.Setenv("DB_URI_FILE", uriFile)
 	os.Setenv("RCLONE_REMOTE", "s3:bucket")
+	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
 
 	cfg, err := Load()
 	if err != nil {
@@ -152,10 +169,15 @@ func TestLoad_FileVariantPrecedence(t *testing.T) {
 	uriFile := filepath.Join(dir, "db_uri.txt")
 	os.WriteFile(uriFile, []byte("from-file"), 0o644)
 
+	// Create temporary rclone config file
+	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
+	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
+
 	os.Setenv("ENGINE", "pg")
 	os.Setenv("DB_URI", "from-env")
 	os.Setenv("DB_URI_FILE", uriFile)
 	os.Setenv("RCLONE_REMOTE", "s3:bucket")
+	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
 
 	cfg, err := Load()
 	if err != nil {
@@ -174,11 +196,16 @@ func TestLoad_PasswordFile(t *testing.T) {
 	pwFile := filepath.Join(dir, "password.txt")
 	os.WriteFile(pwFile, []byte("  s3cret  \n"), 0o644)
 
+	// Create temporary rclone config file
+	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
+	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
+
 	os.Setenv("ENGINE", "pg")
 	os.Setenv("DB_HOST", "localhost")
 	os.Setenv("DB_NAME", "testdb")
 	os.Setenv("DB_PASSWORD_FILE", pwFile)
 	os.Setenv("RCLONE_REMOTE", "s3:bucket")
+	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
 
 	cfg, err := Load()
 	if err != nil {
@@ -191,7 +218,7 @@ func TestLoad_PasswordFile(t *testing.T) {
 
 func TestLoad_ScheduleOnce(t *testing.T) {
 	clearEnv()
-	setMinimalEnv()
+	setMinimalEnv(t)
 	os.Setenv("BACKUP_SCHEDULE", "once")
 
 	cfg, err := Load()
@@ -205,7 +232,7 @@ func TestLoad_ScheduleOnce(t *testing.T) {
 
 func TestLoad_ScheduleOnceCaseInsensitive(t *testing.T) {
 	clearEnv()
-	setMinimalEnv()
+	setMinimalEnv(t)
 	os.Setenv("BACKUP_SCHEDULE", "Once")
 
 	cfg, err := Load()
@@ -219,7 +246,7 @@ func TestLoad_ScheduleOnceCaseInsensitive(t *testing.T) {
 
 func TestLoad_InvalidSchedule(t *testing.T) {
 	clearEnv()
-	setMinimalEnv()
+	setMinimalEnv(t)
 	os.Setenv("BACKUP_SCHEDULE", "invalid-cron")
 
 	_, err := Load()
@@ -230,7 +257,7 @@ func TestLoad_InvalidSchedule(t *testing.T) {
 
 func TestLoad_InvalidMode(t *testing.T) {
 	clearEnv()
-	setMinimalEnv()
+	setMinimalEnv(t)
 	os.Setenv("BACKUP_MODE", "invalid")
 
 	_, err := Load()
@@ -241,7 +268,7 @@ func TestLoad_InvalidMode(t *testing.T) {
 
 func TestLoad_Timeout(t *testing.T) {
 	clearEnv()
-	setMinimalEnv()
+	setMinimalEnv(t)
 	os.Setenv("BACKUP_TIMEOUT", "30m")
 
 	cfg, err := Load()
@@ -255,7 +282,7 @@ func TestLoad_Timeout(t *testing.T) {
 
 func TestLoad_InvalidTimeout(t *testing.T) {
 	clearEnv()
-	setMinimalEnv()
+	setMinimalEnv(t)
 	os.Setenv("BACKUP_TIMEOUT", "notaduration")
 
 	_, err := Load()
@@ -266,7 +293,7 @@ func TestLoad_InvalidTimeout(t *testing.T) {
 
 func TestLoad_InvalidNotifyOn(t *testing.T) {
 	clearEnv()
-	setMinimalEnv()
+	setMinimalEnv(t)
 	os.Setenv("NOTIFY_ON", "never")
 
 	_, err := Load()
@@ -285,6 +312,12 @@ func TestLoad_AllEngines(t *testing.T) {
 			os.Setenv("DB_NAME", "testdb")
 			os.Setenv("RCLONE_REMOTE", "s3:bucket")
 
+			// Create temporary rclone config file
+			dir := t.TempDir()
+			rcloneConfigFile := filepath.Join(dir, "rclone.conf")
+			os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
+			os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
+
 			cfg, err := Load()
 			if err != nil {
 				t.Fatalf("unexpected error for engine %s: %v", eng, err)
@@ -298,7 +331,7 @@ func TestLoad_AllEngines(t *testing.T) {
 
 func TestLoad_Defaults(t *testing.T) {
 	clearEnv()
-	setMinimalEnv()
+	setMinimalEnv(t)
 
 	cfg, err := Load()
 	if err != nil {
@@ -314,7 +347,7 @@ func TestLoad_Defaults(t *testing.T) {
 		{"BackupNameTemplate", cfg.BackupNameTemplate, "{db}-{date}-{time}"},
 		{"NotifyOn", cfg.NotifyOn, "failure"},
 		{"LogLevel", cfg.LogLevel, "info"},
-		{"LogFormat", cfg.LogFormat, "json"},
+		{"LogFormat", cfg.LogFormat, "text"},
 		{"Timezone", cfg.Timezone, "UTC"},
 		{"BackupTempDir", cfg.BackupTempDir, "/tmp/dbstash-work"},
 		{"DBAuthSource", cfg.DBAuthSource, "admin"},
