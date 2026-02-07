@@ -19,7 +19,11 @@ type TarPipeline struct{}
 
 // Execute runs the tar pipeline: dump → temp dir → tar → rclone rcat.
 func (p *TarPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *config.Config) (string, int64, error) {
-	filename := resolveDirname(cfg.BackupNameTemplate, cfg, eng) + ".tar"
+	ext := ".tar"
+	if cfg.BackupCompress {
+		ext = ".tar.gz"
+	}
+	filename := resolveDirname(cfg.BackupNameTemplate, cfg, eng) + ext
 	remotePath := strings.TrimRight(cfg.RcloneRemote, "/") + "/" + filename
 
 	log := logger.Log.With().Str("pipeline", "tar").Str("remote_path", remotePath).Logger()
@@ -49,8 +53,13 @@ func (p *TarPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *confi
 		return "", 0, fmt.Errorf("dump failed: %w (stderr: %s)", err, dumpStderr.String())
 	}
 
-	// Pipe: tar → rclone rcat
-	tarCmd := exec.CommandContext(ctx, "tar", "cf", "-", "-C", tempDir, ".")
+	// Pipe: tar → rclone rcat (with gzip if compression is enabled)
+	var tarCmd *exec.Cmd
+	if cfg.BackupCompress {
+		tarCmd = exec.CommandContext(ctx, "tar", "czf", "-", "-C", tempDir, ".")
+	} else {
+		tarCmd = exec.CommandContext(ctx, "tar", "cf", "-", "-C", tempDir, ".")
+	}
 	rcloneArgs := []string{"rcat", remotePath}
 	rcloneArgs = append(rcloneArgs, rcloneConfigArgs(cfg)...)
 	rcloneCmd := exec.CommandContext(ctx, "rclone", rcloneArgs...)

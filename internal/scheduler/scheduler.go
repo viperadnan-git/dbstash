@@ -90,7 +90,7 @@ func (s *Scheduler) runWithLock() {
 // RunOnce executes a single backup run with full orchestration:
 // hooks, pipeline, retention, notifications, and logging.
 func RunOnce(parentCtx context.Context, cfg *config.Config, eng engine.Engine, pipe pipeline.Pipeline, tracker *health.Tracker) error {
-	backupID := uuid.Must(uuid.NewV7()).String()[:12]
+	backupID := uuid.Must(uuid.NewV7()).String()[:8]
 	log := logger.With(eng.Name(), cfg.DBNameOrDefault(), backupID)
 	start := time.Now()
 

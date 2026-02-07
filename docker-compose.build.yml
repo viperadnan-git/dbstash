@@ -1,0 +1,97 @@
+services:
+  # PostgreSQL
+  pg-15:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pg
+      args:
+        DB_VERSION: "15"
+    image: ghcr.io/viperadnan/dbstash:pg-15
+
+  pg-16:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pg
+      args:
+        DB_VERSION: "16"
+    image: ghcr.io/viperadnan/dbstash:pg-16
+
+  pg-17:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pg
+      args:
+        DB_VERSION: "17"
+    image: ghcr.io/viperadnan/dbstash:pg-17
+
+  # MongoDB
+  mongo-6:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mongo
+    image: ghcr.io/viperadnan/dbstash:mongo-6
+
+  mongo-7:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mongo
+    image: ghcr.io/viperadnan/dbstash:mongo-7
+
+  mongo-8:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mongo
+    image: ghcr.io/viperadnan/dbstash:mongo-8
+
+  # MySQL
+  mysql-8:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mysql
+      args:
+        DB_VERSION: "8"
+    image: ghcr.io/viperadnan/dbstash:mysql-8
+
+  mysql-9:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mysql
+      args:
+        DB_VERSION: "9"
+    image: ghcr.io/viperadnan/dbstash:mysql-9
+
+  # MariaDB (uses mysql Dockerfile with ENGINE_NAME override)
+  mariadb-10:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mysql
+      args:
+        DB_VERSION: "10"
+        ENGINE_NAME: mariadb
+    image: ghcr.io/viperadnan/dbstash:mariadb-10
+
+  mariadb-11:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mysql
+      args:
+        DB_VERSION: "11"
+        ENGINE_NAME: mariadb
+    image: ghcr.io/viperadnan/dbstash:mariadb-11
+
+  # Redis
+  redis-7:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.redis
+      args:
+        DB_VERSION: "7"
+    image: ghcr.io/viperadnan/dbstash:redis-7
+
+  redis-8:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.redis
+      args:
+        DB_VERSION: "8"
+    image: ghcr.io/viperadnan/dbstash:redis-8

@@ -336,7 +336,7 @@ func TestDBNameOrDefault(t *testing.T) {
 		expected string
 	}{
 		{"with name", Config{DBName: "mydb"}, "mydb"},
-		{"with uri", Config{DBURI: "postgres://host/db"}, "from-uri"},
+		{"with uri", Config{DBURI: "postgres://host/db"}, "db"},
 		{"neither", Config{}, "unknown"},
 	}
 	for _, tt := range tests {

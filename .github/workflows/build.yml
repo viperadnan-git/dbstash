@@ -26,6 +26,7 @@ jobs:
             build_args: DB_VERSION=15
           - engine: pg
             version: "16"
+            is_default: true
             dockerfile: docker/Dockerfile.pg
             build_args: DB_VERSION=16
           - engine: pg
@@ -34,20 +35,16 @@ jobs:
             build_args: DB_VERSION=17
           # MongoDB
           - engine: mongo
-            version: "6"
-            dockerfile: docker/Dockerfile.mongo
-            build_args: MONGO_TOOLS_VERSION=100.9.0
-          - engine: mongo
             version: "7"
             dockerfile: docker/Dockerfile.mongo
-            build_args: MONGO_TOOLS_VERSION=100.10.0
           - engine: mongo
             version: "8"
+            is_default: true
             dockerfile: docker/Dockerfile.mongo
-            build_args: MONGO_TOOLS_VERSION=100.10.0
           # MySQL
           - engine: mysql
             version: "8"
+            is_default: true
             dockerfile: docker/Dockerfile.mysql
             build_args: DB_VERSION=8
           - engine: mysql
@@ -58,14 +55,20 @@ jobs:
           - engine: mariadb
             version: "10"
             dockerfile: docker/Dockerfile.mysql
-            build_args: DB_VERSION=10
+            build_args: |
+              DB_VERSION=10
+              ENGINE_NAME=mariadb
           - engine: mariadb
             version: "11"
+            is_default: true
             dockerfile: docker/Dockerfile.mysql
-            build_args: DB_VERSION=11
+            build_args: |
+              DB_VERSION=11
+              ENGINE_NAME=mariadb
           # Redis
           - engine: redis
             version: "7"
+            is_default: true
             dockerfile: docker/Dockerfile.redis
             build_args: DB_VERSION=7
           - engine: redis
@@ -80,7 +83,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
 
       - name: Build Go binary
         run: CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o dbstash ./cmd/dbstash
@@ -102,7 +105,8 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ matrix.engine }}-${{ matrix.version }}
-            type=raw,value=${{ matrix.engine }}-latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=${{ matrix.engine }}-latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && matrix.is_default == 'true' }}
+            type=raw,value=${{ matrix.engine }},enable=${{ startsWith(github.ref, 'refs/tags/v') && matrix.is_default == 'true' }}
 
       - name: Build and push
         uses: docker/build-push-action@v5

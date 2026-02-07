@@ -18,15 +18,20 @@ docker run --rm \
 
 ## Available Images
 
-| Database   | Engine Key | Example Tags              |
-|------------|------------|---------------------------|
-| PostgreSQL | `pg`       | `pg-15`, `pg-16`, `pg-17` |
-| MongoDB    | `mongo`    | `mongo-6`, `mongo-7`, `mongo-8` |
-| MySQL      | `mysql`    | `mysql-8`, `mysql-9`      |
-| MariaDB    | `mariadb`  | `mariadb-10`, `mariadb-11`|
-| Redis      | `redis`    | `redis-7`, `redis-8`      |
+| Database   | Engine Key | Recommended Tag | Version-Specific Tags | Default Version |
+|------------|------------|-----------------|------------------------|-----------------|
+| PostgreSQL | `pg`       | `:pg`, `:pg-latest` | `:pg-15`, `:pg-16`, `:pg-17` | 16 |
+| MongoDB    | `mongo`    | `:mongo`, `:mongo-latest` | `:mongo-7`, `:mongo-8` | 8 |
+| MySQL      | `mysql`    | `:mysql`, `:mysql-latest` | `:mysql-8`, `:mysql-9` | 8 |
+| MariaDB    | `mariadb`  | `:mariadb`, `:mariadb-latest` | `:mariadb-10`, `:mariadb-11` | 11 |
+| Redis      | `redis`    | `:redis`, `:redis-latest` | `:redis-7`, `:redis-8` | 7 |
 
-All images are available at `ghcr.io/viperadnan/dbstash:<engine>-<version>`.
+**Tag Strategy:**
+- **`:engine-version`** (e.g. `:pg-16`) — pinned to specific database version
+- **`:engine`** (e.g. `:pg`) — recommended stable version (updated on new releases)
+- **`:engine-latest`** (e.g. `:pg-latest`) — latest supported version (may change)
+
+All images: `ghcr.io/viperadnan/dbstash:<tag>`
 
 ## How It Works
 
@@ -124,7 +129,7 @@ The `BACKUP_NAME_TEMPLATE` value is expanded at backup time by replacing tokens 
 | `{date}` | Current date as `YYYY-MM-DD` | `2026-02-07` |
 | `{time}` | Current time as `HHmmss` | `020000` |
 | `{ts}` | Unix timestamp in seconds | `1770508800` |
-| `{uuid}` | First 12 characters of a UUIDv7 (time-ordered, unique) | `01953528e5f6` |
+| `{uuid}` | First 8 characters of a UUIDv7 (time-ordered) | `019c38fb` |
 
 **Default template:** `{db}-{date}-{time}` produces filenames like `myapp-2026-02-07-020000.sql`.
 

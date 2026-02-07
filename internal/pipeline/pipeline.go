@@ -44,7 +44,7 @@ func New(mode string) (Pipeline, error) {
 //	{date}   — current date as YYYY-MM-DD (e.g. "2026-02-07")
 //	{time}   — current time as HHmmss (e.g. "020000")
 //	{ts}     — Unix timestamp in seconds (e.g. "1770508800")
-//	{uuid}   — first 12 characters of a UUIDv7 (e.g. "a1b2c3d4e5f6")
+//	{uuid}   — first 8 characters of a UUIDv7 (e.g. "019c38fb")
 //
 // The file extension is appended automatically based on the engine and
 // compression setting, unless overridden by BACKUP_EXTENSION. Timestamps
@@ -58,7 +58,7 @@ func resolveFilename(template string, cfg *config.Config, eng engine.Engine, ext
 	}
 
 	dbName := cfg.DBNameOrDefault()
-	shortUUID := uuid.Must(uuid.NewV7()).String()[:12]
+	shortUUID := uuid.Must(uuid.NewV7()).String()[:8]
 
 	name := template
 	name = strings.ReplaceAll(name, "{db}", dbName)
@@ -89,7 +89,7 @@ func resolveDirname(template string, cfg *config.Config, eng engine.Engine) stri
 	}
 
 	dbName := cfg.DBNameOrDefault()
-	shortUUID := uuid.Must(uuid.NewV7()).String()[:12]
+	shortUUID := uuid.Must(uuid.NewV7()).String()[:8]
 
 	name := template
 	name = strings.ReplaceAll(name, "{db}", dbName)

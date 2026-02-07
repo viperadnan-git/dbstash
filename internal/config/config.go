@@ -171,15 +171,44 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// DBNameOrDefault returns the database name, or a fallback for display purposes.
+// DBNameOrDefault returns the database name. If DB_NAME is not set,
+// it attempts to extract the database name from DB_URI.
 func (c *Config) DBNameOrDefault() string {
 	if c.DBName != "" {
 		return c.DBName
 	}
 	if c.DBURI != "" {
-		return "from-uri"
+		return dbNameFromURI(c.DBURI)
 	}
 	return "unknown"
+}
+
+// dbNameFromURI extracts the database name from a connection URI path.
+func dbNameFromURI(uri string) string {
+	// Handle schemes like mongodb+srv:// , postgresql://, etc.
+	idx := strings.Index(uri, "://")
+	if idx < 0 {
+		return "unknown"
+	}
+	rest := uri[idx+3:]
+	// Skip user:pass@host portion
+	if at := strings.Index(rest, "@"); at >= 0 {
+		rest = rest[at+1:]
+	}
+	// Find path after host(:port)
+	slash := strings.Index(rest, "/")
+	if slash < 0 {
+		return "unknown"
+	}
+	dbName := rest[slash+1:]
+	// Strip query parameters
+	if q := strings.Index(dbName, "?"); q >= 0 {
+		dbName = dbName[:q]
+	}
+	if dbName == "" {
+		return "unknown"
+	}
+	return dbName
 }
 
 // resolveFileVar checks for a _FILE variant first. If the file exists, its
