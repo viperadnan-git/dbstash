@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/viperadnan/dbstash/internal/config"
-	"github.com/viperadnan/dbstash/internal/engine"
+	"github.com/viperadnan-git/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/engine"
 )
 
 // Pipeline defines the interface for backup execution strategies.

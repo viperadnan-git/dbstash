@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/viperadnan/dbstash/internal/config"
-	"github.com/viperadnan/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/logger"
 )
 
 // RemoteEntry represents a single item returned by rclone lsjson.

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/viperadnan/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/logger"
 )
 
 // Result contains the details of a backup run for notification purposes.

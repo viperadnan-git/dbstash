@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/viperadnan/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/config"
 )
 
 // Postgres implements the Engine interface for PostgreSQL using pg_dump.

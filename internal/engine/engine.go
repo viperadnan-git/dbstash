@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/viperadnan/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/config"
 )
 
 // Engine defines the interface that each database dump tool must implement.

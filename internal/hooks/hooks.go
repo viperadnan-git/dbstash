@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/viperadnan/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/logger"
 )
 
 // RunPreBackup executes the pre-backup hook command via sh -c.

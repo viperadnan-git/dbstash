@@ -13,14 +13,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
-	"github.com/viperadnan/dbstash/internal/config"
-	"github.com/viperadnan/dbstash/internal/engine"
-	"github.com/viperadnan/dbstash/internal/health"
-	"github.com/viperadnan/dbstash/internal/hooks"
-	"github.com/viperadnan/dbstash/internal/logger"
-	"github.com/viperadnan/dbstash/internal/notify"
-	"github.com/viperadnan/dbstash/internal/pipeline"
-	"github.com/viperadnan/dbstash/internal/retention"
+	"github.com/viperadnan-git/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/engine"
+	"github.com/viperadnan-git/dbstash/internal/health"
+	"github.com/viperadnan-git/dbstash/internal/hooks"
+	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/notify"
+	"github.com/viperadnan-git/dbstash/internal/pipeline"
+	"github.com/viperadnan-git/dbstash/internal/retention"
 )
 
 // Scheduler wraps cron scheduling with lock guarding.

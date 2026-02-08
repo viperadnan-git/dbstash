@@ -1,4 +1,4 @@
-module github.com/viperadnan/dbstash
+module github.com/viperadnan-git/dbstash
 
 go 1.25.5
 

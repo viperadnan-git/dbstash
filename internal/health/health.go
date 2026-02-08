@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/viperadnan/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/logger"
 )
 
 // Status represents the health check response.

@@ -9,9 +9,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/viperadnan/dbstash/internal/config"
-	"github.com/viperadnan/dbstash/internal/engine"
-	"github.com/viperadnan/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/engine"
+	"github.com/viperadnan-git/dbstash/internal/logger"
 )
 
 // TarPipeline dumps to a temp directory, then streams tar output to rclone rcat.

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/viperadnan/dbstash/internal/config"
-	"github.com/viperadnan/dbstash/internal/engine"
-	"github.com/viperadnan/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/engine"
+	"github.com/viperadnan-git/dbstash/internal/logger"
 )
 
 // StreamPipeline pipes dump stdout directly into rclone rcat.

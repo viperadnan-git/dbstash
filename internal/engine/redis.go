@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/viperadnan/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/config"
 )
 
 // Redis implements the Engine interface for Redis using redis-cli --rdb.

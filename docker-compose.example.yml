@@ -1,6 +1,6 @@
 services:
   backup-pg:
-    image: ghcr.io/viperadnan/dbstash:pg-16
+    image: ghcr.io/viperadnan-git/dbstash:pg-16
     environment:
       DB_URI_FILE: /run/secrets/pg_uri
       RCLONE_REMOTE: "s3:my-bucket/backups/pg"
@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
 
   backup-mongo:
-    image: ghcr.io/viperadnan/dbstash:mongo-7
+    image: ghcr.io/viperadnan-git/dbstash:mongo-7
     environment:
       # Individual vars also supported
       DB_HOST: mongodb

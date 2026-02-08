@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"github.com/viperadnan/dbstash/internal/config"
-	"github.com/viperadnan/dbstash/internal/engine"
-	"github.com/viperadnan/dbstash/internal/health"
-	"github.com/viperadnan/dbstash/internal/logger"
-	"github.com/viperadnan/dbstash/internal/pipeline"
-	"github.com/viperadnan/dbstash/internal/scheduler"
+	"github.com/viperadnan-git/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/engine"
+	"github.com/viperadnan-git/dbstash/internal/health"
+	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/pipeline"
+	"github.com/viperadnan-git/dbstash/internal/scheduler"
 )
 
 var version = "dev"

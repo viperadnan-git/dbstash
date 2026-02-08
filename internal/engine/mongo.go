@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/viperadnan/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/config"
 )
 
 // Mongo implements the Engine interface for MongoDB using mongodump.
