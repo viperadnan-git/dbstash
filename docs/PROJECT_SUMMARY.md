@@ -108,19 +108,19 @@ Uses [urfave/cli v3](https://github.com/urfave/cli) with `Sources: cli.EnvVars()
 | Database | Engine Key | Example Tags |
 |---|---|---|
 | PostgreSQL | `pg` | `pg-15`, `pg-16`, `pg-17` |
-| MongoDB | `mongo` | `mongo-6`, `mongo-7`, `mongo-8` |
+| MongoDB | `mongo` | `mongo-7`, `mongo-8` |
 | MySQL | `mysql` | `mysql-8`, `mysql-9` |
 | MariaDB | `mariadb` | `mariadb-10`, `mariadb-11` |
 | Redis | `redis` | `redis-7`, `redis-8` |
-| SQLite | `sqlite` | `sqlite-3` |
 
-### Special Tags
+### Tag Strategy
 
-| Tag | Meaning |
-|---|---|
-| `pg-latest` | Latest supported PostgreSQL version |
-| `mongo-latest` | Latest supported MongoDB version |
-| `latest` | **Not used** — always requires explicit engine tag |
+| Tag Pattern | Example | Meaning |
+|---|---|---|
+| `:engine-version` | `:pg-17` | Rolling: latest dbstash build with that DB version |
+| `:engine`, `:engine-latest` | `:pg`, `:pg-latest` | Rolling: latest DB version |
+| `:engine-version-dbstashversion` | `:pg-17-0.7.0` | Fully pinned: specific DB version + dbstash version |
+| `latest` | — | **Not used** — always requires explicit engine tag |
 
 ### Future-proofing
 
@@ -497,7 +497,8 @@ dbstash/
 │   └── Dockerfile.redis
 ├── .github/
 │   └── workflows/
-│       └── build.yml            # Matrix build for all engine×version combos
+│       └── build.yml            # Docker builds, binary artifacts, GoReleaser releases
+├── .goreleaser.yaml             # GoReleaser config for cross-platform binary releases
 ├── docker-compose.example.yml
 ├── go.mod
 ├── go.sum
@@ -509,31 +510,45 @@ dbstash/
 
 ## Build Strategy
 
-A single GitHub Actions workflow uses a matrix to build all combinations:
+A single GitHub Actions workflow (`build.yml`) handles three jobs:
 
-```yaml
-strategy:
-  matrix:
-    include:
-      - engine: pg
-        version: 15
-        base: postgres:15-alpine
-      - engine: pg
-        version: 16
-        base: postgres:16-alpine
-      - engine: pg
-        version: 17
-        base: postgres:17-alpine
-      - engine: mongo
-        version: 6
-        tools_version: "100.9"
-      - engine: mongo
-        version: 7
-        tools_version: "100.10"
-      # ...
+### 1. Docker Images (`build` job)
+
+Runs on every push. A matrix builds all engine×version combinations. Each Dockerfile is a multi-stage build: compile Go binary in `golang:alpine`, then copy into a minimal image with only the required database client tools and rclone. Version is injected via `-X main.version=...` ldflags (tag version or short SHA).
+
+Pushes to both GHCR (`ghcr.io/viperadnan-git/dbstash`) and Docker Hub (`viperadnan/dbstash`).
+
+### 2. Binary Artifacts (`build-binaries` job)
+
+Runs on non-tag pushes only. Cross-compiles for 6 targets (linux/darwin/windows × amd64/arm64) and uploads as GitHub Actions artifacts with 90-day retention.
+
+### 3. Release (`release` job)
+
+Runs on tag pushes (`v*`) only. Uses [GoReleaser](https://goreleaser.com/) v2 to build compressed archives (`.tar.gz` for Linux/macOS, `.zip` for Windows), generate `checksums.txt`, and publish a GitHub Release. Pre-release tags (e.g. `v1.0.0-rc1`) are automatically marked as pre-release.
+
+#### GoReleaser Config (`.goreleaser.yaml`)
+
+- Builds: `./cmd/dbstash`, CGO disabled, stripped (`-s -w`), version injected via ldflags
+- Targets: linux, darwin, windows × amd64, arm64
+- Archives: `dbstash-{os}-{arch}.tar.gz` (`.zip` for Windows)
+- Checksums: `checksums.txt` (SHA256)
+- Release: auto-published, pre-release detection via tag name
+
+### Version Injection
+
+The binary version is set at build time via ldflags:
+
+```go
+var version = "dev"  // overridden by: -ldflags "-X main.version=..."
 ```
 
-Each Dockerfile is a multi-stage build: compile Go binary in `golang:alpine`, then copy into a minimal image with only the required database client tools and rclone.
+| Build Context | Version Value |
+|---|---|
+| GoReleaser (tag) | Tag without `v` prefix (e.g. `0.7.0`) |
+| Docker build (tag) | Tag without `v` prefix |
+| Docker build (branch) | Short commit SHA (8 chars) |
+| Binary artifacts (branch) | Short commit SHA (8 chars) |
+| Local `go build` | `dev` (default) |
 
 ---
 
