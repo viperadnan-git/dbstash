@@ -1,4 +1,4 @@
-// Package config handles environment variable parsing, validation, and
+// Package config handles configuration parsing, validation, and
 // Docker secrets (_FILE variant) resolution for dbstash.
 package config
 
@@ -18,12 +18,12 @@ type Config struct {
 	Engine string
 
 	// Connection
-	DBURI      string
-	DBHost     string
-	DBPort     string
-	DBName     string
-	DBUser     string
-	DBPassword string
+	DBURI        string
+	DBHost       string
+	DBPort       string
+	DBName       string
+	DBUser       string
+	DBPassword   string
 	DBAuthSource string
 
 	// Rclone
@@ -69,23 +69,67 @@ type Config struct {
 	ScheduleOnce bool
 }
 
+// Prepare validates all fields and sets derived values (ScheduleOnce,
+// BackupTimeout). It returns an error if any required field is missing
+// or any value is invalid. Both Load() and CLI mode call this after
+// populating the Config struct.
+func (c *Config) Prepare() error {
+	// Engine
+	c.Engine = strings.ToLower(c.Engine)
+	if c.Engine == "" {
+		return fmt.Errorf("ENGINE is required")
+	}
+	validEngines := map[string]bool{"pg": true, "mongo": true, "mysql": true, "mariadb": true, "redis": true}
+	if !validEngines[c.Engine] {
+		return fmt.Errorf("unsupported ENGINE: %q (valid: pg, mongo, mysql, mariadb, redis)", c.Engine)
+	}
+
+	// Connection
+	if c.DBURI == "" && (c.DBHost == "" || c.DBName == "") {
+		return fmt.Errorf("either DB_URI (or DB_URI_FILE) or DB_HOST + DB_NAME must be set")
+	}
+
+	// Rclone remote
+	if c.RcloneRemote == "" {
+		return fmt.Errorf("RCLONE_REMOTE is required")
+	}
+
+	// Schedule
+	if strings.EqualFold(c.BackupSchedule, "once") {
+		c.ScheduleOnce = true
+		c.BackupSchedule = "once"
+	} else {
+		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+		if _, err := parser.Parse(c.BackupSchedule); err != nil {
+			return fmt.Errorf("invalid BACKUP_SCHEDULE %q: %w", c.BackupSchedule, err)
+		}
+	}
+
+	// Backup mode
+	c.BackupMode = strings.ToLower(c.BackupMode)
+	validModes := map[string]bool{"stream": true, "directory": true, "tar": true}
+	if !validModes[c.BackupMode] {
+		return fmt.Errorf("invalid BACKUP_MODE %q (valid: stream, directory, tar)", c.BackupMode)
+	}
+
+	// Notifications
+	c.NotifyOn = strings.ToLower(c.NotifyOn)
+	validNotifyOn := map[string]bool{"always": true, "failure": true, "success": true}
+	if !validNotifyOn[c.NotifyOn] {
+		return fmt.Errorf("invalid NOTIFY_ON %q (valid: always, failure, success)", c.NotifyOn)
+	}
+
+	return nil
+}
+
 // Load reads environment variables, resolves _FILE variants, and returns
 // a validated Config. It returns an error if required variables are missing
 // or values are invalid.
 func Load() (*Config, error) {
 	cfg := &Config{}
 
-	// Engine detection
-	cfg.Engine = strings.ToLower(envOrDefault("ENGINE", ""))
-	if cfg.Engine == "" {
-		return nil, fmt.Errorf("ENGINE env var is required (set by Docker image)")
-	}
-	validEngines := map[string]bool{"pg": true, "mongo": true, "mysql": true, "mariadb": true, "redis": true}
-	if !validEngines[cfg.Engine] {
-		return nil, fmt.Errorf("unsupported ENGINE: %q (valid: pg, mongo, mysql, mariadb, redis)", cfg.Engine)
-	}
-
 	// Connection — resolve _FILE variants first
+	cfg.Engine = envOrDefault("ENGINE", "")
 	cfg.DBURI = resolveFileVar("DB_URI", "DB_URI_FILE")
 	cfg.DBHost = envOrDefault("DB_HOST", "")
 	cfg.DBPort = envOrDefault("DB_PORT", "")
@@ -94,43 +138,21 @@ func Load() (*Config, error) {
 	cfg.DBPassword = resolveFileVar("DB_PASSWORD", "DB_PASSWORD_FILE")
 	cfg.DBAuthSource = envOrDefault("DB_AUTH_SOURCE", "admin")
 
-	// Validate connection: either DB_URI or DB_HOST+DB_NAME
-	if cfg.DBURI == "" && (cfg.DBHost == "" || cfg.DBName == "") {
-		return nil, fmt.Errorf("either DB_URI (or DB_URI_FILE) or DB_HOST + DB_NAME must be set")
-	}
-
 	// Rclone
 	cfg.RcloneRemote = envOrDefault("RCLONE_REMOTE", "")
-	if cfg.RcloneRemote == "" {
-		return nil, fmt.Errorf("RCLONE_REMOTE is required")
-	}
-
-	rcloneConfigFile, err := resolveRcloneConfig()
+	rcloneConfigFile, err := ResolveRcloneConfig(
+		os.Getenv("RCLONE_CONFIG_FILE"),
+		os.Getenv("RCLONE_CONFIG"),
+	)
 	if err != nil {
 		return nil, err
 	}
 	cfg.RcloneConfigFile = rcloneConfigFile
 	cfg.RcloneExtraArgs = envOrDefault("RCLONE_EXTRA_ARGS", "")
 
-	// Schedule
+	// Schedule & Naming
 	cfg.BackupSchedule = envOrDefault("BACKUP_SCHEDULE", "0 2 * * *")
-	if strings.EqualFold(cfg.BackupSchedule, "once") {
-		cfg.ScheduleOnce = true
-		cfg.BackupSchedule = "once"
-	} else {
-		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		if _, err := parser.Parse(cfg.BackupSchedule); err != nil {
-			return nil, fmt.Errorf("invalid BACKUP_SCHEDULE %q: %w", cfg.BackupSchedule, err)
-		}
-	}
-
-	// Backup mode
-	cfg.BackupMode = strings.ToLower(envOrDefault("BACKUP_MODE", "stream"))
-	validModes := map[string]bool{"stream": true, "directory": true, "tar": true}
-	if !validModes[cfg.BackupMode] {
-		return nil, fmt.Errorf("invalid BACKUP_MODE %q (valid: stream, directory, tar)", cfg.BackupMode)
-	}
-
+	cfg.BackupMode = envOrDefault("BACKUP_MODE", "stream")
 	cfg.BackupNameTemplate = envOrDefault("BACKUP_NAME_TEMPLATE", "{db}-{date}-{time}")
 	cfg.BackupCompress = strings.EqualFold(envOrDefault("BACKUP_COMPRESS", "false"), "true")
 	cfg.BackupExtension = envOrDefault("BACKUP_EXTENSION", "")
@@ -145,11 +167,7 @@ func Load() (*Config, error) {
 
 	// Notifications
 	cfg.NotifyWebhookURL = envOrDefault("NOTIFY_WEBHOOK_URL", "")
-	cfg.NotifyOn = strings.ToLower(envOrDefault("NOTIFY_ON", "failure"))
-	validNotifyOn := map[string]bool{"always": true, "failure": true, "success": true}
-	if !validNotifyOn[cfg.NotifyOn] {
-		return nil, fmt.Errorf("invalid NOTIFY_ON %q (valid: always, failure, success)", cfg.NotifyOn)
-	}
+	cfg.NotifyOn = envOrDefault("NOTIFY_ON", "failure")
 
 	// Logging
 	cfg.LogLevel = envOrDefault("LOG_LEVEL", "info")
@@ -168,11 +186,59 @@ func Load() (*Config, error) {
 		}
 		cfg.BackupTimeout = d
 	}
-
 	cfg.BackupLock = !strings.EqualFold(envOrDefault("BACKUP_LOCK", "true"), "false")
 	cfg.DryRun = strings.EqualFold(envOrDefault("DRY_RUN", "false"), "true")
 
+	// Validate
+	if err := cfg.Prepare(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+// ResolveRcloneConfig resolves the rclone config from a file path or
+// base64-encoded content. It validates that the resolved config file exists.
+func ResolveRcloneConfig(configFilePath, base64Config string) (string, error) {
+	// Check base64-encoded config first
+	if base64Config != "" {
+		decoded, err := base64.StdEncoding.DecodeString(base64Config)
+		if err == nil {
+			tmpFile, err := os.CreateTemp("", "rclone-*.conf")
+			if err == nil {
+				tmpFile.Write(decoded)
+				tmpFile.Close()
+				return tmpFile.Name(), nil
+			}
+		}
+	}
+
+	if configFilePath == "" {
+		configFilePath = "/config/rclone.conf"
+	}
+
+	// Validate that the config file exists
+	if _, err := os.Stat(configFilePath); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("rclone config file not found at %q. Please set RCLONE_CONFIG_FILE to a valid path", configFilePath)
+		}
+		return "", fmt.Errorf("cannot access rclone config file at %q: %w", configFilePath, err)
+	}
+
+	return configFilePath, nil
+}
+
+// ResolveFileValue reads a secret from a file path, trimming whitespace.
+// Returns empty string if the file cannot be read.
+func ResolveFileValue(filePath string) string {
+	if filePath == "" {
+		return ""
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // DBNameOrDefault returns the database name. If DB_NAME is not set,
@@ -226,45 +292,6 @@ func resolveFileVar(baseVar, fileVar string) string {
 		}
 	}
 	return os.Getenv(baseVar)
-}
-
-// resolveRcloneConfig handles RCLONE_CONFIG (base64), RCLONE_CONFIG_FILE,
-// and the default path. It validates that the config file exists.
-func resolveRcloneConfig() (string, error) {
-	// Check _FILE variant first
-	filePath := resolveFileVar("RCLONE_CONFIG_FILE", "")
-	if filePath == "" {
-		filePath = os.Getenv("RCLONE_CONFIG_FILE")
-	}
-
-	// Check base64-encoded config
-	b64 := os.Getenv("RCLONE_CONFIG")
-	if b64 != "" {
-		decoded, err := base64.StdEncoding.DecodeString(b64)
-		if err == nil {
-			tmpFile, err := os.CreateTemp("", "rclone-*.conf")
-			if err == nil {
-				tmpFile.Write(decoded)
-				tmpFile.Close()
-				// Temp file was just created, so it exists
-				return tmpFile.Name(), nil
-			}
-		}
-	}
-
-	if filePath == "" {
-		filePath = "/config/rclone.conf"
-	}
-
-	// Validate that the config file exists
-	if _, err := os.Stat(filePath); err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("rclone config file not found at %q. Please set RCLONE_CONFIG_FILE to a valid path", filePath)
-		}
-		return "", fmt.Errorf("cannot access rclone config file at %q: %w", filePath, err)
-	}
-
-	return filePath, nil
 }
 
 func envOrDefault(key, fallback string) string {

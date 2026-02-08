@@ -73,4 +73,3 @@ func (r *Redis) SupportsCompression() bool { return false }
 
 // ConflictingFlags returns nil — no conflicting flags for redis-cli.
 func (r *Redis) ConflictingFlags(_ string) []string { return nil }
-

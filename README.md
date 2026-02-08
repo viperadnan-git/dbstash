@@ -8,14 +8,14 @@
 [![GitHub Release](https://img.shields.io/github/v/release/viperadnan-git/dbstash)](https://github.com/viperadnan-git/dbstash/releases)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/viperadnan-git/dbstash?logo=go)](https://github.com/viperadnan-git/dbstash)
 
-Dockerized database backup via rclone. Stream database dumps directly to any cloud storage without intermediate files or local disk pressure.
+Database backup via rclone. Stream database dumps directly to any cloud storage without intermediate files or local disk pressure. Run as a standalone CLI or as Docker containers.
 
 ---
 
 ## Features
 
 - **Zero Disk Usage** — Stream dumps directly to cloud storage (stream mode)
-- **Docker Native** — Purpose-built images for PostgreSQL, MongoDB, MySQL, MariaDB, Redis
+- **CLI and Docker** — Run as a standalone binary with flags or as purpose-built Docker images
 - **Any Cloud Storage** — Works with S3, GCS, Azure, Dropbox, 40+ backends via rclone
 - **Multiplatform** — Built for `linux/amd64` and `linux/arm64`
 - **Flexible Scheduling** — Cron expressions or one-time backups
@@ -24,21 +24,40 @@ Dockerized database backup via rclone. Stream database dumps directly to any clo
 - **Retention Policies** — Automatic cleanup by age or file count
 - **Notifications** — Slack/Discord webhooks on success or failure
 - **Hooks** — Pre/post-backup shell command execution
+- **Encryption at Rest** — Transparent encryption via rclone's crypt remote
 
 ## Quick Start
 
+dbstash requires only three things to run:
+
+1. **Database connection** — `DB_URI` or `DB_HOST` + `DB_NAME`
+2. **Rclone remote** — `RCLONE_REMOTE` (where to store backups)
+3. **Rclone config** — A valid rclone config file
+
 ```bash
-# One-time PostgreSQL backup to S3
+# One-time PostgreSQL backup
 docker run --rm \
   -e DB_URI="postgresql://user:pass@host:5432/mydb" \
   -e RCLONE_REMOTE="s3:my-bucket/backups" \
-  -e RCLONE_CONFIG_FILE=/config/rclone.conf \
   -e BACKUP_SCHEDULE=once \
   -v /path/to/rclone.conf:/config/rclone.conf:ro \
-  ghcr.io/viperadnan-git/dbstash:pg-16
+  ghcr.io/viperadnan-git/dbstash:pg-17
 ```
 
-## Available Images
+## CLI Usage
+
+dbstash is also available as a standalone binary. Pre-built binaries for Linux, macOS, and Windows can be downloaded from [Releases](https://github.com/viperadnan-git/dbstash/releases). Requires `rclone` and the engine's dump tool (`pg_dump`, `mongodump`, `mysqldump`, `redis-cli`) to be installed.
+
+```bash
+dbstash <engine> [flags]
+```
+
+All flags map 1:1 to environment variables (`DB_HOST` -> `--db-host`). Run `dbstash <engine> --help` for details.
+
+
+Flags and environment variables can be mixed. **Precedence:** CLI flag > environment variable > default value.
+
+## Available Docker Images
 
 | Database   | Engine Key | Latest Alias Tags | Version-Specific Tags | Latest Version |
 |------------|------------|-------------------|------------------------|----------------|
@@ -96,49 +115,51 @@ secrets:
     file: ./secrets/rclone.conf
 ```
 
-## Environment Variables
+## Configuration
+
+All options can be set via environment variables or CLI flags. In Docker mode, use environment variables. In CLI mode, use flags (which fall back to environment variables automatically).
 
 ### Connection
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `DB_URI` | No* | — | Full connection URI (e.g. `postgresql://user:pass@host:5432/mydb`) |
-| `DB_URI_FILE` | No* | — | Path to a file containing the connection URI (Docker secrets) |
-| `DB_HOST` | No* | — | Database host |
-| `DB_PORT` | No | Engine default | Database port |
-| `DB_NAME` | No* | — | Database name |
-| `DB_USER` | No | — | Database user |
-| `DB_PASSWORD` | No | — | Database password |
-| `DB_PASSWORD_FILE` | No | — | Path to file containing the password (Docker secrets) |
-| `DB_AUTH_SOURCE` | No | `admin` | MongoDB auth database |
+| Variable | Flag | Required | Default | Description |
+|---|---|---|---|---|
+| `DB_URI` | `--db-uri` | No* | — | Full connection URI (e.g. `postgresql://user:pass@host:5432/mydb`) |
+| `DB_URI_FILE` | `--db-uri-file` | No* | — | Path to a file containing the connection URI (Docker secrets) |
+| `DB_HOST` | `--db-host` | No* | — | Database host |
+| `DB_PORT` | `--db-port` | No | Engine default | Database port |
+| `DB_NAME` | `--db-name` | No* | — | Database name |
+| `DB_USER` | `--db-user` | No | — | Database user |
+| `DB_PASSWORD` | `--db-password` | No | — | Database password |
+| `DB_PASSWORD_FILE` | `--db-password-file` | No | — | Path to file containing the password (Docker secrets) |
+| `DB_AUTH_SOURCE` | `--db-auth-source` | No | `admin` | MongoDB auth database |
 
 *Either `DB_URI`/`DB_URI_FILE` **or** `DB_HOST` + `DB_NAME` must be provided.
 
 ### Rclone
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `RCLONE_REMOTE` | Yes | — | Rclone remote path (e.g. `s3:my-bucket/backups`) |
-| `RCLONE_CONFIG` | No | — | Base64-encoded rclone.conf content |
-| `RCLONE_CONFIG_FILE` | No | `/config/rclone.conf` | Path to rclone config file |
-| `RCLONE_EXTRA_ARGS` | No | — | Additional rclone flags |
+| Variable | Flag | Required | Default | Description |
+|---|---|---|---|---|
+| `RCLONE_REMOTE` | `--rclone-remote` | Yes | — | Rclone remote path (e.g. `s3:my-bucket/backups`) |
+| `RCLONE_CONFIG` | `--rclone-config` | No | — | Base64-encoded rclone.conf content |
+| `RCLONE_CONFIG_FILE` | `--rclone-config-file` | No | `/config/rclone.conf` | Path to rclone config file |
+| `RCLONE_EXTRA_ARGS` | `--rclone-extra-args` | No | — | Additional rclone flags |
 
 ### Schedule & Naming
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `BACKUP_SCHEDULE` | No | `0 2 * * *` | Cron expression or `once` for a single backup |
-| `BACKUP_MODE` | No | `stream` | `stream`, `directory`, or `tar` |
-| `BACKUP_NAME_TEMPLATE` | No | `{db}-{date}-{time}` | Filename template |
-| `BACKUP_COMPRESS` | No | `false` | Enable native compression via dump tool |
-| `BACKUP_EXTENSION` | No | auto | Override file extension |
-| `BACKUP_ON_START` | No | `false` | Run backup immediately on container start |
-| `BACKUP_TIMEOUT` | No | `0` | Max duration for a backup (e.g. `1h`, `30m`) |
-| `BACKUP_LOCK` | No | `true` | Prevent overlapping backup runs |
-| `BACKUP_TEMP_DIR` | No | `/tmp/dbstash-work` | Temp directory for directory/tar modes |
-| `DUMP_EXTRA_ARGS` | No | — | Additional flags for the dump tool |
-| `DRY_RUN` | No | `false` | Log config without executing |
-| `TZ` | No | `UTC` | Timezone for schedule and filenames |
+| Variable | Flag | Required | Default | Description |
+|---|---|---|---|---|
+| `BACKUP_SCHEDULE` | `--backup-schedule` | No | `0 2 * * *` | Cron expression or `once` for a single backup |
+| `BACKUP_MODE` | `--backup-mode` | No | `stream` | `stream`, `directory`, or `tar` |
+| `BACKUP_NAME_TEMPLATE` | `--backup-name-template` | No | `{db}-{date}-{time}` | Filename template |
+| `BACKUP_COMPRESS` | `--backup-compress` | No | `false` | Enable native compression via dump tool |
+| `BACKUP_EXTENSION` | `--backup-extension` | No | auto | Override file extension |
+| `BACKUP_ON_START` | `--backup-on-start` | No | `false` | Run backup immediately on start |
+| `BACKUP_TIMEOUT` | `--backup-timeout` | No | `0` | Max duration for a backup (e.g. `1h`, `30m`) |
+| `BACKUP_LOCK` | `--backup-lock` | No | `true` | Prevent overlapping backup runs |
+| `BACKUP_TEMP_DIR` | `--backup-temp-dir` | No | `/tmp/dbstash-work` | Temp directory for directory/tar modes |
+| `DUMP_EXTRA_ARGS` | `--dump-extra-args` | No | — | Additional flags for the dump tool |
+| `DRY_RUN` | `--dry-run` | No | `false` | Log config without executing |
+| `TZ` | `--tz` | No | `UTC` | Timezone for schedule and filenames |
 
 #### Name Template Tokens
 
@@ -157,33 +178,33 @@ The `BACKUP_NAME_TEMPLATE` value is expanded at backup time by replacing tokens 
 
 ### Retention
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `RETENTION_MAX_FILES` | No | `0` (unlimited) | Keep at most N backup files |
-| `RETENTION_MAX_DAYS` | No | `0` (unlimited) | Delete backups older than N days |
+| Variable | Flag | Required | Default | Description |
+|---|---|---|---|---|
+| `RETENTION_MAX_FILES` | `--retention-max-files` | No | `0` (unlimited) | Keep at most N backup files |
+| `RETENTION_MAX_DAYS` | `--retention-max-days` | No | `0` (unlimited) | Delete backups older than N days |
 
 ### Notifications
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `NOTIFY_WEBHOOK_URL` | No | — | Slack or Discord webhook URL |
-| `NOTIFY_ON` | No | `failure` | When to notify: `always`, `failure`, `success` |
+| Variable | Flag | Required | Default | Description |
+|---|---|---|---|---|
+| `NOTIFY_WEBHOOK_URL` | `--notify-webhook-url` | No | — | Slack or Discord webhook URL |
+| `NOTIFY_ON` | `--notify-on` | No | `failure` | When to notify: `always`, `failure`, `success` |
 
 ### Hooks
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `HOOK_PRE_BACKUP` | No | — | Shell command to run before backup |
-| `HOOK_POST_BACKUP` | No | — | Shell command to run after backup |
+| Variable | Flag | Required | Default | Description |
+|---|---|---|---|---|
+| `HOOK_PRE_BACKUP` | `--hook-pre-backup` | No | — | Shell command to run before backup |
+| `HOOK_POST_BACKUP` | `--hook-post-backup` | No | — | Shell command to run after backup |
 
 Post-backup hooks receive `DBSTASH_STATUS` (`success`/`failure`) and `DBSTASH_FILE` (remote path) as environment variables.
 
 ### Logging
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
-| `LOG_FORMAT` | No | `text` | `json` or `text` |
+| Variable | Flag | Required | Default | Description |
+|---|---|---|---|---|
+| `LOG_LEVEL` | `--log-level` | No | `info` | `debug`, `info`, `warn`, `error` |
+| `LOG_FORMAT` | `--log-format` | No | `text` | `json` or `text` |
 
 ## Backup Modes
 
@@ -260,4 +281,4 @@ Returns:
 
 ## License
 
-MIT
+[MIT](./LICENSE)

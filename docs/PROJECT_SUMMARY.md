@@ -1,8 +1,8 @@
-# dbstash — Dockerized Database Backup via Rclone
+# dbstash — Database Backup via Rclone
 
 ## Overview
 
-**dbstash** is a suite of lightweight Docker images that back up databases by streaming dump output directly into an rclone-mounted remote — no intermediate files, no local disk pressure. Each image targets a specific database engine and major version, configured entirely through environment variables.
+**dbstash** is a database backup tool that streams dump output directly into an rclone-mounted remote — no intermediate files, no local disk pressure. It can be run as a standalone CLI binary or as purpose-built Docker images targeting specific database engines and major versions. Configuration is supported through CLI flags, environment variables, or both.
 
 ---
 
@@ -18,6 +18,78 @@
 | Docker ecosystem alignment | Lingua franca (Docker, K8s, rclone itself) | — | — |
 
 **Verdict:** Go gives us a single static binary with robust pipe streaming, excellent error handling, built-in scheduling, and trivial multi-stage Docker builds. It's the natural fit for infrastructure tooling.
+
+---
+
+## CLI Mode
+
+dbstash supports two modes of operation:
+
+### 1. CLI Mode (standalone binary)
+
+Run dbstash directly with the engine as a subcommand and options as flags:
+
+```bash
+dbstash <engine> [flags]
+```
+
+**Examples:**
+
+```bash
+# One-time PostgreSQL backup
+dbstash pg --db-uri postgresql://user:pass@host:5432/mydb \
+  --rclone-remote s3:my-bucket/backups \
+  --rclone-config-file ~/.config/rclone/rclone.conf \
+  --backup-schedule once
+
+# MongoDB backup with compression
+dbstash mongo --db-host localhost --db-name mydb \
+  --rclone-remote s3:bucket --backup-compress
+
+# MySQL dry run
+dbstash mysql --db-uri mysql://user:pass@host/db \
+  --rclone-remote s3:bucket --dry-run
+```
+
+### 2. Docker Mode (environment variables only)
+
+Run without subcommand; configure entirely via environment variables:
+
+```bash
+ENGINE=pg DB_URI=postgresql://... RCLONE_REMOTE=s3:bucket dbstash
+```
+
+### Flag Naming Convention
+
+Flags are a 1:1 mapping from environment variable names: lowercase with hyphens replacing underscores.
+
+| Environment Variable | CLI Flag |
+|---|---|
+| `DB_HOST` | `--db-host` |
+| `RCLONE_REMOTE` | `--rclone-remote` |
+| `BACKUP_SCHEDULE` | `--backup-schedule` |
+
+### Value Precedence
+
+```
+CLI flag > environment variable > default value
+```
+
+Flags and env vars can be mixed freely. For example:
+
+```bash
+DB_URI=postgresql://localhost/mydb dbstash pg --rclone-remote s3:bucket --backup-schedule once
+```
+
+### CLI Library
+
+Uses [urfave/cli v3](https://github.com/urfave/cli) with `Sources: cli.EnvVars()` for automatic flag-to-env-var fallback. Each engine is a subcommand with shared common flags and engine-specific flags (e.g., `--db-auth-source` for MongoDB).
+
+### Engine-Specific Flags
+
+| Flag | Engine | Default | Description |
+|---|---|---|---|
+| `--db-auth-source` | mongo | `admin` | MongoDB auth database |
 
 ---
 
@@ -71,7 +143,7 @@ The schema extends naturally: adding ClickHouse → `clickhouse-24`, CockroachDB
 │  ┌──────────────────────────────────────────────┐ │
 │  │              Go binary (dbstash)             │ │
 │  │  • Cron scheduler (with flock guard)         │ │
-│  │  • Env config parser + _FILE secrets loader  │ │
+│  │  • CLI flags + env config (urfave/cli v3)    │ │
 │  │  • Pre/post backup hooks                     │ │
 │  │  • Pipe: dump stdout → rclone rcat stdin     │ │
 │  │  • Retention manager (max files / max days)  │ │
@@ -291,9 +363,9 @@ Webhook payloads are automatically formatted for the detected platform (Slack or
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `LOG_LEVEL` | No | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
-| `LOG_FORMAT` | No | `json` | Log format: `json` (structured) or `text` (human-readable) |
+| `LOG_FORMAT` | No | `text` | Log format: `json` (structured) or `text` (human-readable) |
 
-All log output is structured JSON by default for easy ingestion into log aggregators (Loki, CloudWatch, Datadog, etc.). Each log entry includes: timestamp, level, message, and contextual fields (engine, database, backup_id, duration, etc.).
+Log output is human-readable text by default. Set `LOG_FORMAT=json` for structured JSON suitable for log aggregators (Loki, CloudWatch, Datadog, etc.). Each log entry includes: timestamp, level, message, and contextual fields (engine, database, backup_id, duration, etc.).
 
 ### Hooks
 
@@ -475,5 +547,6 @@ Each Dockerfile is a multi-stage build: compile Go binary in `golang:alpine`, th
 | **v0.4** | Docker secrets (`_FILE` vars), backup locking, timeout (`BACKUP_TIMEOUT`), dry-run mode |
 | **v0.5** | Slack & Discord webhook notifications, pre/post backup hooks |
 | **v0.6** | MySQL/MariaDB support, health endpoint, Docker Compose examples, encryption-at-rest docs |
-| **v0.7** | Email notifications, restore support (`dbstash restore` command) |
+| **v0.7** | CLI mode (urfave/cli v3), version injection via ldflags, GoReleaser, CI binary artifacts and releases |
+| **v0.8** | Email notifications, restore support (`dbstash restore` command) |
 | **v1.0** | Stable release, full docs, CI matrix builds for all engines |
