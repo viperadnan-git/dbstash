@@ -77,6 +77,8 @@ func (p *StreamPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *co
 	pr.Close()
 
 	if dumpErr != nil {
+		log.Debug().Str("remote_path", remotePath).Msg("dump failed, cleaning up remote file")
+		cleanupRemoteFile(ctx, remotePath, cfg)
 		return "", 0, fmt.Errorf("dump failed: %w (stderr: %s)", dumpErr, dumpStderr.String())
 	}
 	if rcloneErr != nil {

@@ -3,14 +3,17 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/viperadnan-git/dbstash/internal/config"
 	"github.com/viperadnan-git/dbstash/internal/engine"
+	"github.com/viperadnan-git/dbstash/internal/logger"
 )
 
 // Pipeline defines the interface for backup execution strategies.
@@ -100,6 +103,20 @@ func resolveDirname(template string, cfg *config.Config, eng engine.Engine) stri
 	name = strings.ReplaceAll(name, "{uuid}", shortUUID)
 
 	return name
+}
+
+// cleanupRemoteFile removes a partially uploaded file from the remote on failure.
+func cleanupRemoteFile(ctx context.Context, remotePath string, cfg *config.Config) {
+	args := []string{"deletefile", remotePath}
+	args = append(args, rcloneConfigArgs(cfg)...)
+	cmd := exec.CommandContext(ctx, "rclone", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		logger.Log.Warn().Err(err).Str("path", remotePath).Msg("failed to clean up remote file after error")
+	} else {
+		logger.Log.Debug().Str("path", remotePath).Msg("cleaned up remote file after error")
+	}
 }
 
 // rcloneConfigArgs returns the config flag for rclone if a config file is set.

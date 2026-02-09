@@ -89,6 +89,8 @@ func (p *TarPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *confi
 	pr.Close()
 
 	if tarErr != nil {
+		log.Debug().Str("remote_path", remotePath).Msg("tar failed, cleaning up remote file")
+		cleanupRemoteFile(ctx, remotePath, cfg)
 		return "", 0, fmt.Errorf("tar failed: %w (stderr: %s)", tarErr, tarStderr.String())
 	}
 	if rcloneErr != nil {
