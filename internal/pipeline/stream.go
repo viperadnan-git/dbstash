@@ -47,7 +47,7 @@ func (p *StreamPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *co
 	var dumpStderr bytes.Buffer
 	dumpCmd.Stderr = &dumpStderr
 
-	log.Debug().Str("dump_cmd", dumpCmd.String()).Msg("executing dump command")
+	log.Debug().Str("dump_cmd", config.MaskCmdArgs(dumpCmd.Args)).Msg("executing dump command")
 	log.Debug().Strs("rclone_args", rcloneArgs).Msg("executing rclone command")
 
 	// Start rclone first, then dump

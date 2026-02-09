@@ -48,7 +48,7 @@ func (p *TarPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *confi
 	var dumpStderr bytes.Buffer
 	dumpCmd.Stderr = &dumpStderr
 
-	log.Debug().Str("cmd", dumpCmd.String()).Msg("running dump")
+	log.Debug().Str("cmd", config.MaskCmdArgs(dumpCmd.Args)).Msg("running dump")
 	if err := dumpCmd.Run(); err != nil {
 		return "", 0, fmt.Errorf("dump failed: %w (stderr: %s)", err, dumpStderr.String())
 	}

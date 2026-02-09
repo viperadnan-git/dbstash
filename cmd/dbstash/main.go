@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -442,7 +441,7 @@ func dryRun(cfg *config.Config, eng engine.Engine) {
 
 	// Connection info (masked)
 	if cfg.DBURI != "" {
-		log.Info().Str("db_uri", maskURI(cfg.DBURI)).Msg("connection")
+		log.Info().Str("db_uri", config.MaskURI(cfg.DBURI)).Msg("connection")
 	} else {
 		log.Info().
 			Str("host", cfg.DBHost).
@@ -458,28 +457,12 @@ func dryRun(cfg *config.Config, eng engine.Engine) {
 	if err != nil {
 		log.Warn().Err(err).Msg("could not build dump command for dry run")
 	} else {
-		log.Info().Str("command", cmd.String()).Msg("dump command")
+		log.Info().Str("command", config.MaskCmdArgs(cmd.Args)).Msg("dump command")
 	}
 
 	log.Info().Msg("=== END DRY RUN ===")
 }
 
-func maskURI(uri string) string {
-	parts := strings.SplitN(uri, "@", 2)
-	if len(parts) != 2 {
-		return uri
-	}
-	prefix := parts[0]
-	idx := strings.LastIndex(prefix, ":")
-	if idx < 0 {
-		return uri
-	}
-	schemeEnd := strings.Index(prefix, "://")
-	if schemeEnd >= 0 && idx <= schemeEnd+2 {
-		return uri
-	}
-	return prefix[:idx+1] + "****@" + parts[1]
-}
 
 func maskPassword(pw string) string {
 	if pw == "" {
@@ -487,3 +470,4 @@ func maskPassword(pw string) string {
 	}
 	return "****"
 }
+

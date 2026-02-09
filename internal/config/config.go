@@ -294,6 +294,38 @@ func resolveFileVar(baseVar, fileVar string) string {
 	return os.Getenv(baseVar)
 }
 
+// MaskURI masks the password in a connection URI for safe logging.
+// e.g. postgresql://user:secret@host:5432/db -> postgresql://user:****@host:5432/db
+func MaskURI(uri string) string {
+	parts := strings.SplitN(uri, "@", 2)
+	if len(parts) != 2 {
+		return uri
+	}
+	prefix := parts[0]
+	idx := strings.LastIndex(prefix, ":")
+	if idx < 0 {
+		return uri
+	}
+	schemeEnd := strings.Index(prefix, "://")
+	if schemeEnd >= 0 && idx <= schemeEnd+2 {
+		return uri
+	}
+	return prefix[:idx+1] + "****@" + parts[1]
+}
+
+// MaskCmdArgs masks URIs with credentials in command arguments for safe logging.
+func MaskCmdArgs(args []string) string {
+	masked := make([]string, len(args))
+	for i, arg := range args {
+		if strings.Contains(arg, "://") && strings.Contains(arg, "@") {
+			masked[i] = MaskURI(arg)
+		} else {
+			masked[i] = arg
+		}
+	}
+	return strings.Join(masked, " ")
+}
+
 func envOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
