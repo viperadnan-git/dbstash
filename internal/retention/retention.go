@@ -69,17 +69,31 @@ func SelectDeletions(entries []RemoteEntry, maxFiles, maxDays int) []RemoteEntry
 	return selectDeletions(entries, maxFiles, maxDays)
 }
 
+// rcloneDefaultTime is the fallback ModTime returned by rclone lsjson
+// when the backend does not support modification times.
+var rcloneDefaultTime = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
 func selectDeletions(entries []RemoteEntry, maxFiles, maxDays int) []RemoteEntry {
+	// Filter out entries without modtime (rclone returns 2000-01-01 when backend has no modtime support)
+	var valid []RemoteEntry
+	for _, entry := range entries {
+		if entry.ModTime.Equal(rcloneDefaultTime) {
+			logger.Log.Debug().Str("path", entry.Path).Msg("retention: skipping entry without modtime")
+			continue
+		}
+		valid = append(valid, entry)
+	}
+
 	// Sort by modification time, newest first
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].ModTime.After(entries[j].ModTime)
+	sort.Slice(valid, func(i, j int) bool {
+		return valid[i].ModTime.After(valid[j].ModTime)
 	})
 
 	deleteSet := make(map[string]bool)
 
 	// Max files: keep only the newest N
-	if maxFiles > 0 && len(entries) > maxFiles {
-		for _, entry := range entries[maxFiles:] {
+	if maxFiles > 0 && len(valid) > maxFiles {
+		for _, entry := range valid[maxFiles:] {
 			deleteSet[entry.Path] = true
 		}
 	}
@@ -87,7 +101,7 @@ func selectDeletions(entries []RemoteEntry, maxFiles, maxDays int) []RemoteEntry
 	// Max days: delete entries older than N days
 	if maxDays > 0 {
 		cutoff := time.Now().AddDate(0, 0, -maxDays)
-		for _, entry := range entries {
+		for _, entry := range valid {
 			if entry.ModTime.Before(cutoff) {
 				deleteSet[entry.Path] = true
 			}
@@ -95,7 +109,7 @@ func selectDeletions(entries []RemoteEntry, maxFiles, maxDays int) []RemoteEntry
 	}
 
 	var result []RemoteEntry
-	for _, entry := range entries {
+	for _, entry := range valid {
 		if deleteSet[entry.Path] {
 			result = append(result, entry)
 		}

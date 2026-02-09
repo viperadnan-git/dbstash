@@ -104,6 +104,35 @@ func TestSelectDeletions_Empty(t *testing.T) {
 	}
 }
 
+func TestSelectDeletions_NoModTime(t *testing.T) {
+	now := time.Now()
+	noModTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	entries := []RemoteEntry{
+		{Path: "old.sql", ModTime: now.Add(-10 * 24 * time.Hour)},
+		{Path: "no-modtime.sql", ModTime: noModTime},
+		{Path: "recent.sql", ModTime: now.Add(-1 * 24 * time.Hour)},
+		{Path: "today.sql", ModTime: now},
+	}
+
+	// maxDays=5: old.sql is older than 5 days, no-modtime.sql should be skipped
+	result := SelectDeletions(entries, 0, 5)
+	if len(result) != 1 {
+		t.Errorf("expected 1 deletion, got %d", len(result))
+	}
+	if len(result) > 0 && result[0].Path != "old.sql" {
+		t.Errorf("expected old.sql to be deleted, got %s", result[0].Path)
+	}
+
+	// maxFiles=2: no-modtime entry is excluded, 3 valid entries remain, delete 1 oldest
+	result = SelectDeletions(entries, 2, 0)
+	if len(result) != 1 {
+		t.Errorf("expected 1 deletion, got %d", len(result))
+	}
+	if len(result) > 0 && result[0].Path != "old.sql" {
+		t.Errorf("expected old.sql to be deleted, got %s", result[0].Path)
+	}
+}
+
 func TestSelectDeletions_SortOrder(t *testing.T) {
 	now := time.Now()
 	// Intentionally unsorted input
