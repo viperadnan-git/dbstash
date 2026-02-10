@@ -104,7 +104,7 @@ services:
       RCLONE_REMOTE: "s3:my-bucket/backups/pg"
       RCLONE_CONFIG_FILE: /run/secrets/rclone_conf
       BACKUP_SCHEDULE: "0 */6 * * *"
-      BACKUP_NAME_TEMPLATE: "{db}-{date}-{time}"
+      BACKUP_NAME_TEMPLATE: "{db}-{timestamp}"
       BACKUP_TIMEOUT: "1h"
       RETENTION_MAX_FILES: 20
       RETENTION_MAX_DAYS: 30
@@ -159,7 +159,7 @@ All options can be set via environment variables or CLI flags. In Docker mode, u
 |---|---|---|---|---|
 | `BACKUP_SCHEDULE` | `--backup-schedule` | No | `0 2 * * *` | Cron expression or `once` for a single backup |
 | `BACKUP_MODE` | `--backup-mode` | No | `stream` | `stream`, `directory`, or `tar` |
-| `BACKUP_NAME_TEMPLATE` | `--backup-name-template` | No | `{db}-{date}-{time}` | Filename template |
+| `BACKUP_NAME_TEMPLATE` | `--backup-name-template` | No | `{db}-{timestamp}` | Filename template |
 | `BACKUP_COMPRESS` | `--backup-compress` | No | `false` | Enable native compression via dump tool |
 | `BACKUP_EXTENSION` | `--backup-extension` | No | auto | Override file extension |
 | `BACKUP_ALL_DATABASES` | `--backup-all-databases` | No | `false` | Dump all databases (pg, mysql/mariadb, mongo). Alias: `BACKUP_ALL_DBS` / `--backup-all-dbs` |
@@ -181,11 +181,11 @@ The `BACKUP_NAME_TEMPLATE` value is expanded at backup time by replacing tokens 
 | `{engine}` | Engine key | `pg` |
 | `{date}` | Current date as `YYYY-MM-DD` | `2026-02-07` |
 | `{time}` | Current time as `HHmmss` | `020000` |
-| `{timestamp}` | ISO 8601 timestamp as `YYYYMMDDTHHMMSS` | `20260207T020000` |
+| `{timestamp}` | ISO 8601 timestamp with timezone | `20260207T020000Z` |
 | `{ts}` | Unix timestamp in seconds | `1770508800` |
 | `{uuid}` | First 8 characters of a UUIDv7 (time-ordered) | `019c38fb` |
 
-**Default template:** `{db}-{date}-{time}` produces filenames like `myapp-2026-02-07-020000.sql`.
+**Default template:** `{db}-{timestamp}` produces filenames like `myapp-20260207T020000Z.sql`.
 
 ### Retention
 

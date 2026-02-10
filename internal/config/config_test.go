@@ -344,7 +344,7 @@ func TestLoad_Defaults(t *testing.T) {
 		expected string
 	}{
 		{"BackupMode", cfg.BackupMode, "stream"},
-		{"BackupNameTemplate", cfg.BackupNameTemplate, "{db}-{date}-{time}"},
+		{"BackupNameTemplate", cfg.BackupNameTemplate, "{db}-{timestamp}"},
 		{"NotifyOn", cfg.NotifyOn, "failure"},
 		{"LogLevel", cfg.LogLevel, "info"},
 		{"LogFormat", cfg.LogFormat, "text"},

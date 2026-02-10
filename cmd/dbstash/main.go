@@ -156,8 +156,8 @@ func commonFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    "backup-name-template",
-			Usage:   "Filename template with tokens: {db}, {engine}, {date}, {time}, {ts}, {uuid}",
-			Value:   "{db}-{date}-{time}",
+			Usage:   "Filename template with tokens: {db}, {engine}, {date}, {time}, {timestamp}, {ts}, {uuid}",
+			Value:   "{db}-{timestamp}",
 			Sources: cli.EnvVars("BACKUP_NAME_TEMPLATE"),
 		},
 		&cli.BoolFlag{

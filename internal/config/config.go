@@ -160,7 +160,7 @@ func Load() (*Config, error) {
 	// Schedule & Naming
 	cfg.BackupSchedule = envOrDefault("BACKUP_SCHEDULE", "0 2 * * *")
 	cfg.BackupMode = envOrDefault("BACKUP_MODE", "stream")
-	cfg.BackupNameTemplate = envOrDefault("BACKUP_NAME_TEMPLATE", "{db}-{date}-{time}")
+	cfg.BackupNameTemplate = envOrDefault("BACKUP_NAME_TEMPLATE", "{db}-{timestamp}")
 	cfg.BackupCompress = strings.EqualFold(envOrDefault("BACKUP_COMPRESS", "false"), "true")
 	cfg.BackupExtension = envOrDefault("BACKUP_EXTENSION", "")
 	cfg.BackupOnStart = strings.EqualFold(envOrDefault("BACKUP_ON_START", "false"), "true")

@@ -46,7 +46,7 @@ func New(mode string) (Pipeline, error) {
 //	{engine} — engine key: pg, mongo, mysql, mariadb, or redis
 //	{date}   — current date as YYYY-MM-DD (e.g. "2026-02-07")
 //	{time}   — current time as HHmmss (e.g. "020000")
-//	{timestamp} — ISO 8601 timestamp as YYYYMMDDTHHMMSS (e.g. "20260207T020000")
+//	{timestamp} — ISO 8601 timestamp as YYYYMMDDTHHMMSSZ0700 (e.g. "20260207T020000Z", "20260207T073000+0530")
 //	{ts}     — Unix timestamp in seconds (e.g. "1770508800")
 //	{uuid}   — first 8 characters of a UUIDv7 (e.g. "019c38fb")
 //
@@ -69,7 +69,7 @@ func resolveFilename(template string, cfg *config.Config, eng engine.Engine, ext
 	name = strings.ReplaceAll(name, "{engine}", eng.Name())
 	name = strings.ReplaceAll(name, "{date}", now.Format("2006-01-02"))
 	name = strings.ReplaceAll(name, "{time}", now.Format("150405"))
-	name = strings.ReplaceAll(name, "{timestamp}", now.Format("20060102T150405"))
+	name = strings.ReplaceAll(name, "{timestamp}", now.Format("20060102T150405Z0700"))
 	name = strings.ReplaceAll(name, "{ts}", fmt.Sprintf("%d", now.Unix()))
 	name = strings.ReplaceAll(name, "{uuid}", shortUUID)
 
@@ -101,7 +101,7 @@ func resolveDirname(template string, cfg *config.Config, eng engine.Engine) stri
 	name = strings.ReplaceAll(name, "{engine}", eng.Name())
 	name = strings.ReplaceAll(name, "{date}", now.Format("2006-01-02"))
 	name = strings.ReplaceAll(name, "{time}", now.Format("150405"))
-	name = strings.ReplaceAll(name, "{timestamp}", now.Format("20060102T150405"))
+	name = strings.ReplaceAll(name, "{timestamp}", now.Format("20060102T150405Z0700"))
 	name = strings.ReplaceAll(name, "{ts}", fmt.Sprintf("%d", now.Unix()))
 	name = strings.ReplaceAll(name, "{uuid}", shortUUID)
 

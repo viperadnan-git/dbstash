@@ -406,11 +406,11 @@ Hooks run inside the container with the same environment. If `HOOK_PRE_BACKUP` e
 | `{engine}` | Engine key | `pg` |
 | `{date}` | `YYYY-MM-DD` | `2026-02-07` |
 | `{time}` | `HHmmss` | `020000` |
-| `{timestamp}` | ISO 8601 `YYYYMMDDTHHMMSS` | `20260207T020000` |
+| `{timestamp}` | ISO 8601 with timezone | `20260207T020000Z` |
 | `{ts}` | Unix timestamp | `1770508800` |
 | `{uuid}` | Short UUID (8 chars) | `a1b2c3d4` |
 
-Default produces: `myapp-2026-02-07-020000.sql` (PostgreSQL) or `analytics-2026-02-07-020000.archive` (MongoDB). With `BACKUP_COMPRESS=true`: `myapp-2026-02-07-020000.dump` / `analytics-2026-02-07-020000.archive.gz`.
+Default produces: `myapp-20260207T020000Z.sql` (PostgreSQL) or `analytics-20260207T020000Z.archive` (MongoDB). With `BACKUP_COMPRESS=true`: `myapp-20260207T020000Z.dump` / `analytics-20260207T020000Z.archive.gz`.
 
 ---
 

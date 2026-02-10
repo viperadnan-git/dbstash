@@ -6,7 +6,7 @@ services:
       RCLONE_REMOTE: "s3:my-bucket/backups/pg"
       RCLONE_CONFIG_FILE: /run/secrets/rclone_conf
       BACKUP_SCHEDULE: "0 */6 * * *"        # every 6 hours
-      BACKUP_NAME_TEMPLATE: "{db}-{date}-{time}"
+      BACKUP_NAME_TEMPLATE: "{db}-{timestamp}"
       BACKUP_TIMEOUT: "1h"
       RETENTION_MAX_FILES: 20
       RETENTION_MAX_DAYS: 30
