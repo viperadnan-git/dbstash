@@ -406,6 +406,7 @@ Hooks run inside the container with the same environment. If `HOOK_PRE_BACKUP` e
 | `{engine}` | Engine key | `pg` |
 | `{date}` | `YYYY-MM-DD` | `2026-02-07` |
 | `{time}` | `HHmmss` | `020000` |
+| `{timestamp}` | ISO 8601 `YYYYMMDDTHHMMSS` | `20260207T020000` |
 | `{ts}` | Unix timestamp | `1770508800` |
 | `{uuid}` | Short UUID (8 chars) | `a1b2c3d4` |
 

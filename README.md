@@ -181,6 +181,7 @@ The `BACKUP_NAME_TEMPLATE` value is expanded at backup time by replacing tokens 
 | `{engine}` | Engine key | `pg` |
 | `{date}` | Current date as `YYYY-MM-DD` | `2026-02-07` |
 | `{time}` | Current time as `HHmmss` | `020000` |
+| `{timestamp}` | ISO 8601 timestamp as `YYYYMMDDTHHMMSS` | `20260207T020000` |
 | `{ts}` | Unix timestamp in seconds | `1770508800` |
 | `{uuid}` | First 8 characters of a UUIDv7 (time-ordered) | `019c38fb` |
 
