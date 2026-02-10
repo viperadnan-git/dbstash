@@ -314,7 +314,7 @@ Supported `_FILE` variants: `DB_URI_FILE`, `DB_PASSWORD_FILE`, `RCLONE_CONFIG_FI
 |---|---|---|---|
 | `RCLONE_REMOTE` | Yes | — | Rclone remote path (e.g., `s3:my-bucket/backups`) |
 | `RCLONE_CONFIG` | No | — | Base64-encoded rclone.conf content |
-| `RCLONE_CONFIG_FILE` | No | `/config/rclone.conf` | Path to mounted rclone config file (Docker secrets compatible) |
+| `RCLONE_CONFIG_FILE` | No | `~/.config/rclone/rclone.conf` | Path to mounted rclone config file (Docker secrets compatible) |
 | `RCLONE_EXTRA_ARGS` | No | — | Additional rclone flags |
 
 #### Encryption at Rest

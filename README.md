@@ -150,7 +150,7 @@ All options can be set via environment variables or CLI flags. In Docker mode, u
 |---|---|---|---|---|
 | `RCLONE_REMOTE` | `--rclone-remote` | Yes | — | Rclone remote path (e.g. `s3:my-bucket/backups`) |
 | `RCLONE_CONFIG` | `--rclone-config` | No | — | Base64-encoded rclone.conf content |
-| `RCLONE_CONFIG_FILE` | `--rclone-config-file` | No | `/config/rclone.conf` | Path to rclone config file |
+| `RCLONE_CONFIG_FILE` | `--rclone-config-file` | No | `~/.config/rclone/rclone.conf` | Path to rclone config file |
 | `RCLONE_EXTRA_ARGS` | `--rclone-extra-args` | No | — | Additional rclone flags |
 
 ### Schedule & Naming

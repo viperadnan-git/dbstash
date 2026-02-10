@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -221,7 +222,11 @@ func ResolveRcloneConfig(configFilePath, base64Config string) (string, error) {
 	}
 
 	if configFilePath == "" {
-		configFilePath = "/config/rclone.conf"
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "/"
+		}
+		configFilePath = filepath.Join(home, ".config", "rclone", "rclone.conf")
 	}
 
 	// Validate that the config file exists
