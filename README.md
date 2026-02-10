@@ -40,7 +40,7 @@ docker run --rm \
   -e DB_URI="postgresql://user:pass@host:5432/mydb" \
   -e RCLONE_REMOTE="s3:my-bucket/backups" \
   -e BACKUP_SCHEDULE=once \
-  -v /path/to/rclone.conf:/config/rclone.conf:ro \
+  -v /path/to/rclone.conf:/root/.config/rclone/rclone.conf:ro \
   ghcr.io/viperadnan-git/dbstash:pg-17
 
 # Dump all MongoDB databases
@@ -49,7 +49,7 @@ docker run --rm \
   -e BACKUP_ALL_DATABASES=true \
   -e RCLONE_REMOTE="s3:my-bucket/backups" \
   -e BACKUP_SCHEDULE=once \
-  -v /path/to/rclone.conf:/config/rclone.conf:ro \
+  -v /path/to/rclone.conf:/root/.config/rclone/rclone.conf:ro \
   ghcr.io/viperadnan-git/dbstash:mongo-8
 ```
 
