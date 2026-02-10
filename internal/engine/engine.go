@@ -4,6 +4,7 @@ package engine
 
 import (
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
 
@@ -44,6 +45,26 @@ func New(engineKey string) (Engine, error) {
 	default:
 		return nil, fmt.Errorf("unsupported engine: %s", engineKey)
 	}
+}
+
+// dbNameFromURI extracts the database name from a URI path.
+func dbNameFromURI(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimPrefix(u.Path, "/")
+}
+
+// stripDBFromURI removes the database name from a URI,
+// keeping the scheme, credentials, host, and query parameters intact.
+func stripDBFromURI(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return uri
+	}
+	u.Path = "/"
+	return u.String()
 }
 
 // shellSplit performs basic splitting of a string into arguments, respecting

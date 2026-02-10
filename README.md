@@ -35,13 +35,22 @@ dbstash requires only three things to run:
 3. **Rclone config** — A valid rclone config file
 
 ```bash
-# One-time PostgreSQL backup
+# One-time PostgreSQL backup to S3
 docker run --rm \
   -e DB_URI="postgresql://user:pass@host:5432/mydb" \
   -e RCLONE_REMOTE="s3:my-bucket/backups" \
   -e BACKUP_SCHEDULE=once \
   -v /path/to/rclone.conf:/config/rclone.conf:ro \
   ghcr.io/viperadnan-git/dbstash:pg-17
+
+# Dump all MongoDB databases
+docker run --rm \
+  -e DB_URI="mongodb+srv://user:pass@cluster.mongodb.net" \
+  -e BACKUP_ALL_DATABASES=true \
+  -e RCLONE_REMOTE="s3:my-bucket/backups" \
+  -e BACKUP_SCHEDULE=once \
+  -v /path/to/rclone.conf:/config/rclone.conf:ro \
+  ghcr.io/viperadnan-git/dbstash:mongo-8
 ```
 
 ## CLI Usage
@@ -133,7 +142,7 @@ All options can be set via environment variables or CLI flags. In Docker mode, u
 | `DB_PASSWORD_FILE` | `--db-password-file` | No | — | Path to file containing the password (Docker secrets) |
 | `DB_AUTH_SOURCE` | `--db-auth-source` | No | `admin` | MongoDB auth database |
 
-*Either `DB_URI`/`DB_URI_FILE` **or** `DB_HOST` + `DB_NAME` must be provided.
+*Either `DB_URI`/`DB_URI_FILE` **or** `DB_HOST` + `DB_NAME` must be provided. When `BACKUP_ALL_DATABASES=true`, `DB_NAME` is not required. `DB_NAME` and `BACKUP_ALL_DATABASES` are mutually exclusive.
 
 ### Rclone
 
@@ -153,6 +162,7 @@ All options can be set via environment variables or CLI flags. In Docker mode, u
 | `BACKUP_NAME_TEMPLATE` | `--backup-name-template` | No | `{db}-{date}-{time}` | Filename template |
 | `BACKUP_COMPRESS` | `--backup-compress` | No | `false` | Enable native compression via dump tool |
 | `BACKUP_EXTENSION` | `--backup-extension` | No | auto | Override file extension |
+| `BACKUP_ALL_DATABASES` | `--backup-all-databases` | No | `false` | Dump all databases (pg, mysql/mariadb, mongo). Alias: `BACKUP_ALL_DBS` / `--backup-all-dbs` |
 | `BACKUP_ON_START` | `--backup-on-start` | No | `false` | Run backup immediately on start |
 | `BACKUP_TIMEOUT` | `--backup-timeout` | No | `0` | Max duration for a backup (e.g. `1h`, `30m`) |
 | `BACKUP_LOCK` | `--backup-lock` | No | `true` | Prevent overlapping backup runs |
@@ -167,7 +177,7 @@ The `BACKUP_NAME_TEMPLATE` value is expanded at backup time by replacing tokens 
 
 | Token | Expands To | Example |
 |---|---|---|
-| `{db}` | Database name from `DB_NAME` or parsed from `DB_URI` | `myapp` |
+| `{db}` | Database name from `DB_NAME` or parsed from `DB_URI` (`all` when `BACKUP_ALL_DATABASES=true`) | `myapp` |
 | `{engine}` | Engine key | `pg` |
 | `{date}` | Current date as `YYYY-MM-DD` | `2026-02-07` |
 | `{time}` | Current time as `HHmmss` | `020000` |
@@ -222,6 +232,19 @@ Post-backup hooks receive `DBSTASH_STATUS` (`success`/`failure`) and `DBSTASH_FI
 | MongoDB | `--gzip` | `--gzip` |
 | MySQL/MariaDB | No-op (warning logged) | — |
 | Redis | No change (RDB already compact) | — |
+
+### All Databases
+
+Set `BACKUP_ALL_DATABASES=true` to dump every database on the server instead of a single one.
+
+| Engine | Tool Used | Limitations |
+|---|---|---|
+| PostgreSQL | `pg_dumpall` | Stream mode only (plain SQL, no native compression) |
+| MongoDB | `mongodump` (no `--db`) | None |
+| MySQL/MariaDB | `mysqldump --all-databases` | Stream mode only (`--tab` incompatible) |
+| Redis | No change | Always dumps the full RDB snapshot |
+
+`DB_NAME` and `BACKUP_ALL_DATABASES` are mutually exclusive. When using a URI, the database name is automatically stripped for engines that would otherwise scope the dump to a single database.
 
 ## Encryption at Rest
 

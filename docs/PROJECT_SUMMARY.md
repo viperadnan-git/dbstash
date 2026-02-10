@@ -180,6 +180,19 @@ Compression and archiving are **opt-in** — by default, dump tools output uncom
 
 \* For engines without native compression, `BACKUP_COMPRESS=true` is a no-op and a warning is logged.
 
+#### All Databases (`BACKUP_ALL_DATABASES=true`)
+
+When enabled, dbstash dumps every database on the server instead of a single one. The dump tool changes per engine:
+
+| Engine | Single DB Tool | All DBs Tool | Limitations |
+|---|---|---|---|
+| PostgreSQL | `pg_dump` | `pg_dumpall` | Stream mode only (plain SQL output, no `--format=custom`/`--format=directory`). `BACKUP_COMPRESS=true` is a no-op. |
+| MongoDB | `mongodump --db=<name>` | `mongodump` (no `--db`) | None. Database name is stripped from URI when present. |
+| MySQL/MariaDB | `mysqldump <dbname>` | `mysqldump --all-databases` | Stream mode only (`--tab` is incompatible). |
+| Redis | `redis-cli --rdb -` | No change | Always dumps the full RDB snapshot. Flag is silently ignored. |
+
+The `{db}` token in `BACKUP_NAME_TEMPLATE` resolves to `all` when this option is enabled.
+
 #### `DUMP_EXTRA_ARGS` Conflict Detection
 
 When `BACKUP_MODE=stream`, dbstash validates `DUMP_EXTRA_ARGS` at startup against a per-engine blocklist of flags that would cause the dump tool to write to disk instead of stdout. If a conflicting flag is detected, dbstash logs a **warning** but does **not** block execution — the dump tool's own exit code and error output will surface the real failure through logging and notifications.
@@ -254,13 +267,13 @@ BACKUP_MODE=tar
 | `DB_URI_FILE` | No* | — | Path to a file containing the connection URI (for Docker secrets) |
 | `DB_HOST` | No* | — | Database host |
 | `DB_PORT` | No | Engine default | Database port |
-| `DB_NAME` | No* | — | Database name (or `--all-databases` equivalent) |
+| `DB_NAME` | No* | — | Database name (mutually exclusive with `BACKUP_ALL_DATABASES`) |
 | `DB_USER` | No | — | Database user |
 | `DB_PASSWORD` | No | — | Database password |
 | `DB_PASSWORD_FILE` | No | — | Path to a file containing the password (for Docker secrets) |
 | `DB_AUTH_SOURCE` | No | `admin` | MongoDB auth database |
 
-\* Either `DB_URI` (or `DB_URI_FILE`) or `DB_HOST` + `DB_NAME` must be provided. If `DB_URI` is set, individual fields are ignored. `_FILE` variants are read at startup and take precedence over their non-file counterparts.
+\* Either `DB_URI` (or `DB_URI_FILE`) or `DB_HOST` + `DB_NAME` must be provided. When `BACKUP_ALL_DATABASES=true`, `DB_NAME` is not required. `DB_NAME` and `BACKUP_ALL_DATABASES` are mutually exclusive. If `DB_URI` is set, individual fields are ignored. `_FILE` variants are read at startup and take precedence over their non-file counterparts.
 
 #### Docker Secrets Support
 
@@ -332,6 +345,7 @@ Then point `RCLONE_REMOTE=s3-backup-encrypted:` — all backups are transparentl
 | `BACKUP_NAME_TEMPLATE` | No | `{db}-{date}-{time}` | Filename template (see below) |
 | `BACKUP_COMPRESS` | No | `false` | Enable native compression via the dump tool (see compression table above) |
 | `BACKUP_EXTENSION` | No | auto | Override file extension (auto picks based on engine and compression, e.g. `.sql`, `.dump`, `.archive`, `.archive.gz`) |
+| `BACKUP_ALL_DATABASES` | No | `false` | Dump all databases instead of a single one. Uses `pg_dumpall` for PostgreSQL, `--all-databases` for MySQL/MariaDB, omits `--db` for MongoDB. Alias: `BACKUP_ALL_DBS`. Mutually exclusive with `DB_NAME` |
 | `BACKUP_ON_START` | No | `false` | Run a backup immediately on container start |
 | `DUMP_EXTRA_ARGS` | No | — | Additional flags passed to the dump tool (e.g. `--compress=zstd:9` for pg_dump). Overrides `BACKUP_COMPRESS` behaviour |
 | `TZ` | No | `UTC` | Timezone for schedule and filenames |

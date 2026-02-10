@@ -12,7 +12,7 @@ func clearEnv() {
 		"DB_USER", "DB_PASSWORD", "DB_PASSWORD_FILE", "DB_AUTH_SOURCE",
 		"RCLONE_REMOTE", "RCLONE_CONFIG", "RCLONE_CONFIG_FILE", "RCLONE_EXTRA_ARGS",
 		"BACKUP_SCHEDULE", "BACKUP_MODE", "BACKUP_NAME_TEMPLATE", "BACKUP_COMPRESS",
-		"BACKUP_EXTENSION", "BACKUP_ON_START", "DUMP_EXTRA_ARGS", "TZ",
+		"BACKUP_EXTENSION", "BACKUP_ON_START", "BACKUP_ALL_DATABASES", "DUMP_EXTRA_ARGS", "TZ",
 		"BACKUP_TEMP_DIR", "RETENTION_MAX_FILES", "RETENTION_MAX_DAYS",
 		"NOTIFY_WEBHOOK_URL", "NOTIFY_ON", "LOG_LEVEL", "LOG_FORMAT",
 		"HOOK_PRE_BACKUP", "HOOK_POST_BACKUP", "BACKUP_TIMEOUT", "BACKUP_LOCK",
@@ -368,6 +368,7 @@ func TestDBNameOrDefault(t *testing.T) {
 		cfg      Config
 		expected string
 	}{
+		{"all databases", Config{BackupAllDatabases: true}, "all"},
 		{"with name", Config{DBName: "mydb"}, "mydb"},
 		{"with uri", Config{DBURI: "postgres://host/db"}, "db"},
 		{"neither", Config{}, "unknown"},
@@ -378,5 +379,64 @@ func TestDBNameOrDefault(t *testing.T) {
 				t.Errorf("expected %q, got %q", tt.expected, got)
 			}
 		})
+	}
+}
+
+func TestLoad_BackupAllDatabases(t *testing.T) {
+	clearEnv()
+	os.Setenv("ENGINE", "pg")
+	os.Setenv("DB_HOST", "localhost")
+	os.Setenv("BACKUP_ALL_DATABASES", "true")
+	os.Setenv("RCLONE_REMOTE", "s3:bucket")
+
+	dir := t.TempDir()
+	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
+	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
+	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.BackupAllDatabases {
+		t.Error("expected BackupAllDatabases to be true")
+	}
+}
+
+func TestLoad_BackupAllDatabases_MutualExclusion(t *testing.T) {
+	clearEnv()
+	os.Setenv("ENGINE", "pg")
+	os.Setenv("DB_HOST", "localhost")
+	os.Setenv("DB_NAME", "testdb")
+	os.Setenv("BACKUP_ALL_DATABASES", "true")
+	os.Setenv("RCLONE_REMOTE", "s3:bucket")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when both DB_NAME and BACKUP_ALL_DATABASES are set")
+	}
+}
+
+func TestLoad_BackupAllDatabases_WithURI(t *testing.T) {
+	clearEnv()
+	os.Setenv("ENGINE", "mongo")
+	os.Setenv("DB_URI", "mongodb://host:27017")
+	os.Setenv("BACKUP_ALL_DATABASES", "true")
+	os.Setenv("RCLONE_REMOTE", "s3:bucket")
+
+	dir := t.TempDir()
+	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
+	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
+	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.BackupAllDatabases {
+		t.Error("expected BackupAllDatabases to be true")
+	}
+	if cfg.DBNameOrDefault() != "all" {
+		t.Errorf("expected DBNameOrDefault 'all', got %q", cfg.DBNameOrDefault())
 	}
 }

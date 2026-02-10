@@ -35,7 +35,17 @@ func (m *Mongo) DumpCommand(cfg *config.Config, mode string, outputDir string) (
 
 	// Connection
 	if cfg.DBURI != "" {
-		args = append(args, fmt.Sprintf("--uri=%s", cfg.DBURI))
+		if cfg.BackupAllDatabases {
+			// Strip database name from URI so mongodump dumps all databases
+			args = append(args, fmt.Sprintf("--uri=%s", stripDBFromURI(cfg.DBURI)))
+		} else {
+			args = append(args, fmt.Sprintf("--uri=%s", cfg.DBURI))
+			dbName := dbNameFromURI(cfg.DBURI)
+			if dbName == "" {
+				return nil, fmt.Errorf("mongo URI has no database name; set DB_NAME, add a database to the URI, or use --all-databases")
+			}
+			args = append(args, fmt.Sprintf("--db=%s", dbName))
+		}
 	} else {
 		if cfg.DBHost != "" {
 			args = append(args, fmt.Sprintf("--host=%s", cfg.DBHost))
@@ -43,7 +53,7 @@ func (m *Mongo) DumpCommand(cfg *config.Config, mode string, outputDir string) (
 		if cfg.DBPort != "" {
 			args = append(args, fmt.Sprintf("--port=%s", cfg.DBPort))
 		}
-		if cfg.DBName != "" {
+		if cfg.DBName != "" && !cfg.BackupAllDatabases {
 			args = append(args, fmt.Sprintf("--db=%s", cfg.DBName))
 		}
 		if cfg.DBUser != "" {

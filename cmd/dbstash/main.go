@@ -175,6 +175,12 @@ func commonFlags() []cli.Flag {
 			Usage:   "Run backup immediately on start",
 			Sources: cli.EnvVars("BACKUP_ON_START"),
 		},
+		&cli.BoolFlag{
+			Name:    "backup-all-databases",
+			Aliases: []string{"backup-all-dbs"},
+			Usage:   "Dump all databases (pg, mysql/mariadb, mongo)",
+			Sources: cli.EnvVars("BACKUP_ALL_DATABASES", "BACKUP_ALL_DBS"),
+		},
 		&cli.StringFlag{
 			Name:    "backup-timeout",
 			Usage:   "Max duration for a backup (e.g. 1h, 30m)",
@@ -306,6 +312,7 @@ func configFromCLI(engineKey string, cmd *cli.Command) (*config.Config, error) {
 	cfg.BackupCompress = cmd.Bool("backup-compress")
 	cfg.BackupExtension = cmd.String("backup-extension")
 	cfg.BackupOnStart = cmd.Bool("backup-on-start")
+	cfg.BackupAllDatabases = cmd.Bool("backup-all-databases")
 	cfg.DumpExtraArgs = cmd.String("dump-extra-args")
 	cfg.Timezone = cmd.String("tz")
 	cfg.BackupTempDir = cmd.String("backup-temp-dir")
@@ -463,11 +470,9 @@ func dryRun(cfg *config.Config, eng engine.Engine) {
 	log.Info().Msg("=== END DRY RUN ===")
 }
 
-
 func maskPassword(pw string) string {
 	if pw == "" {
 		return ""
 	}
 	return "****"
 }
-

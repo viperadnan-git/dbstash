@@ -38,6 +38,7 @@ type Config struct {
 	BackupCompress     bool
 	BackupExtension    string
 	BackupOnStart      bool
+	BackupAllDatabases bool
 	DumpExtraArgs      string
 	Timezone           string
 
@@ -84,9 +85,14 @@ func (c *Config) Prepare() error {
 		return fmt.Errorf("unsupported ENGINE: %q (valid: pg, mongo, mysql, mariadb, redis)", c.Engine)
 	}
 
+	// All-databases vs DB_NAME mutual exclusion
+	if c.BackupAllDatabases && c.DBName != "" {
+		return fmt.Errorf("DB_NAME and BACKUP_ALL_DATABASES are mutually exclusive")
+	}
+
 	// Connection
-	if c.DBURI == "" && (c.DBHost == "" || c.DBName == "") {
-		return fmt.Errorf("either DB_URI (or DB_URI_FILE) or DB_HOST + DB_NAME must be set")
+	if c.DBURI == "" && (c.DBHost == "" || (c.DBName == "" && !c.BackupAllDatabases)) {
+		return fmt.Errorf("either DB_URI (or DB_URI_FILE) or DB_HOST + DB_NAME (or BACKUP_ALL_DATABASES=true) must be set")
 	}
 
 	// Rclone remote
@@ -157,6 +163,7 @@ func Load() (*Config, error) {
 	cfg.BackupCompress = strings.EqualFold(envOrDefault("BACKUP_COMPRESS", "false"), "true")
 	cfg.BackupExtension = envOrDefault("BACKUP_EXTENSION", "")
 	cfg.BackupOnStart = strings.EqualFold(envOrDefault("BACKUP_ON_START", "false"), "true")
+	cfg.BackupAllDatabases = strings.EqualFold(envOrDefault("BACKUP_ALL_DATABASES", "false"), "true")
 	cfg.DumpExtraArgs = envOrDefault("DUMP_EXTRA_ARGS", "")
 	cfg.Timezone = envOrDefault("TZ", "UTC")
 	cfg.BackupTempDir = envOrDefault("BACKUP_TEMP_DIR", "/tmp/dbstash-work")
@@ -244,6 +251,9 @@ func ResolveFileValue(filePath string) string {
 // DBNameOrDefault returns the database name. If DB_NAME is not set,
 // it attempts to extract the database name from DB_URI.
 func (c *Config) DBNameOrDefault() string {
+	if c.BackupAllDatabases {
+		return "all"
+	}
 	if c.DBName != "" {
 		return c.DBName
 	}

@@ -43,6 +43,9 @@ func (m *MySQL) DumpCommand(cfg *config.Config, mode string, outputDir string) (
 	case "stream":
 		// Default stdout output
 	case "directory":
+		if cfg.BackupAllDatabases {
+			return nil, fmt.Errorf("mysqldump --all-databases is incompatible with directory mode (--tab)")
+		}
 		args = append(args, fmt.Sprintf("--tab=%s", outputDir))
 	default:
 		return nil, fmt.Errorf("unsupported mode for mysql: %s", mode)
@@ -57,9 +60,13 @@ func (m *MySQL) DumpCommand(cfg *config.Config, mode string, outputDir string) (
 		args = append(args, shellSplit(cfg.DumpExtraArgs)...)
 	}
 
-	// Database name
-	if dbName != "" {
+	// Database selection
+	if cfg.BackupAllDatabases {
+		args = append(args, "--all-databases")
+	} else if dbName != "" {
 		args = append(args, dbName)
+	} else {
+		return nil, fmt.Errorf("no database name found; set DB_NAME, add a database to the URI, or use --all-databases")
 	}
 
 	cmd := exec.Command("mysqldump", args...)
