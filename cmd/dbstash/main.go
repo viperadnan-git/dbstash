@@ -360,6 +360,9 @@ func run(cfg *config.Config) error {
 	logger.Init(cfg.LogLevel, cfg.LogFormat)
 	log := logger.With(cfg.Engine, cfg.DBNameOrDefault(), "")
 
+	// Remove any leftover temp dirs from a previous crash or SIGKILL
+	pipeline.CleanStaleTempDirs(cfg.BackupTempDir)
+
 	log.Info().
 		Str("engine", cfg.Engine).
 		Str("database", cfg.DBNameOrDefault()).

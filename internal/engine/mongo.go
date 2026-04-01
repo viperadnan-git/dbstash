@@ -24,6 +24,11 @@ func (m *Mongo) DumpCommand(cfg *config.Config, mode string, outputDir string) (
 		if cfg.BackupCompress {
 			args = append(args, "--gzip")
 		}
+	case "file":
+		args = append(args, fmt.Sprintf("--archive=%s", outputDir))
+		if cfg.BackupCompress {
+			args = append(args, "--gzip")
+		}
 	case "directory":
 		args = append(args, fmt.Sprintf("--out=%s", outputDir))
 		if cfg.BackupCompress {
@@ -90,7 +95,7 @@ func (m *Mongo) SupportsCompression() bool { return true }
 
 // ConflictingFlags returns flags incompatible with stream mode.
 func (m *Mongo) ConflictingFlags(mode string) []string {
-	if mode == "stream" {
+	if mode == "stream" || mode == "file" {
 		return []string{"--out=", "-o"}
 	}
 	return nil

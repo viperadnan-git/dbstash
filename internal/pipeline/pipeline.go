@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,6 +25,22 @@ type Pipeline interface {
 	Execute(ctx context.Context, eng engine.Engine, cfg *config.Config) (remotePath string, fileSize int64, err error)
 }
 
+// CleanStaleTempDirs removes any leftover dbstash-* temp directories under
+// BackupTempDir that survived a previous SIGKILL or crash.
+func CleanStaleTempDirs(tempDir string) {
+	entries, err := filepath.Glob(filepath.Join(tempDir, "dbstash-*"))
+	if err != nil || len(entries) == 0 {
+		return
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(entry); err != nil {
+			logger.Log.Warn().Str("path", entry).Err(err).Msg("failed to remove stale temp dir")
+		} else {
+			logger.Log.Debug().Str("path", entry).Msg("removed stale temp dir")
+		}
+	}
+}
+
 // New returns the appropriate Pipeline for the configured backup mode.
 func New(mode string) (Pipeline, error) {
 	switch strings.ToLower(mode) {
@@ -32,6 +50,8 @@ func New(mode string) (Pipeline, error) {
 		return &DirectoryPipeline{}, nil
 	case "tar":
 		return &TarPipeline{}, nil
+	case "file":
+		return &FilePipeline{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported backup mode: %s", mode)
 	}

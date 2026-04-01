@@ -158,7 +158,7 @@ All options can be set via environment variables or CLI flags. In Docker mode, u
 | Variable | Flag | Required | Default | Description |
 |---|---|---|---|---|
 | `BACKUP_SCHEDULE` | `--backup-schedule` | No | `0 2 * * *` | Cron expression or `once` for a single backup |
-| `BACKUP_MODE` | `--backup-mode` | No | `stream` | `stream`, `directory`, or `tar` |
+| `BACKUP_MODE` | `--backup-mode` | No | `stream` | `stream`, `directory`, `tar`, or `file` |
 | `BACKUP_NAME_TEMPLATE` | `--backup-name-template` | No | `{db}-{timestamp}` | Filename template |
 | `BACKUP_COMPRESS` | `--backup-compress` | No | `false` | Enable native compression via dump tool |
 | `BACKUP_EXTENSION` | `--backup-extension` | No | auto | Override file extension |
@@ -166,7 +166,7 @@ All options can be set via environment variables or CLI flags. In Docker mode, u
 | `BACKUP_ON_START` | `--backup-on-start` | No | `false` | Run backup immediately on start |
 | `BACKUP_TIMEOUT` | `--backup-timeout` | No | `0` | Max duration for a backup (e.g. `1h`, `30m`) |
 | `BACKUP_LOCK` | `--backup-lock` | No | `true` | Prevent overlapping backup runs |
-| `BACKUP_TEMP_DIR` | `--backup-temp-dir` | No | `/tmp/dbstash-work` | Temp directory for directory/tar modes |
+| `BACKUP_TEMP_DIR` | `--backup-temp-dir` | No | `/tmp/dbstash-work` | Temp directory for file/directory/tar modes. Stale dirs from crashes are cleaned on startup. |
 | `DUMP_EXTRA_ARGS` | `--dump-extra-args` | No | — | Additional flags for the dump tool |
 | `DRY_RUN` | `--dry-run` | No | `false` | Log config without executing |
 | `TZ` | `--tz` | No | `UTC` | Timezone for schedule and filenames |
@@ -222,6 +222,7 @@ Post-backup hooks receive `DBSTASH_STATUS` (`success`/`failure`) and `DBSTASH_FI
 | Mode | `BACKUP_MODE` | How It Works | Disk Usage |
 |---|---|---|---|
 | **Stream** (default) | `stream` | Pipes dump stdout directly to `rclone rcat` | Zero |
+| **File** | `file` | Dumps to a temp file, uploads via `rclone copy` — same output format as stream but no concurrent upload | Requires temp space |
 | **Directory** | `directory` | Dumps to temp dir, uploads via `rclone copy` | Requires temp space |
 | **Tar** | `tar` | Dumps to temp dir, tar streams to `rclone rcat` | Requires temp space |
 

@@ -18,7 +18,7 @@ func (p *Postgres) Name() string { return "pg" }
 // DumpCommand builds the pg_dump (or pg_dumpall) command for the given mode.
 func (p *Postgres) DumpCommand(cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
 	if cfg.BackupAllDatabases {
-		return p.dumpAllCommand(cfg, mode)
+		return p.dumpAllCommand(cfg, mode, outputDir)
 	}
 
 	var args []string
@@ -29,6 +29,12 @@ func (p *Postgres) DumpCommand(cfg *config.Config, mode string, outputDir string
 			args = append(args, "--format=custom")
 		} else {
 			args = append(args, "--format=plain")
+		}
+	case "file":
+		if cfg.BackupCompress {
+			args = append(args, "--format=custom", fmt.Sprintf("--file=%s", outputDir))
+		} else {
+			args = append(args, "--format=plain", fmt.Sprintf("--file=%s", outputDir))
 		}
 	case "directory":
 		args = append(args, "--format=directory", fmt.Sprintf("--file=%s", outputDir))
@@ -74,9 +80,9 @@ func (p *Postgres) DumpCommand(cfg *config.Config, mode string, outputDir string
 
 // dumpAllCommand builds a pg_dumpall command. Only stream mode is supported
 // because pg_dumpall outputs plain SQL only (no custom/directory format).
-func (p *Postgres) dumpAllCommand(cfg *config.Config, mode string) (*exec.Cmd, error) {
-	if mode != "stream" {
-		return nil, fmt.Errorf("pg_dumpall only supports stream mode (got %q)", mode)
+func (p *Postgres) dumpAllCommand(cfg *config.Config, mode string, outputFile string) (*exec.Cmd, error) {
+	if mode != "stream" && mode != "file" {
+		return nil, fmt.Errorf("pg_dumpall only supports stream/file mode (got %q)", mode)
 	}
 	if cfg.BackupCompress {
 		logger.Log.Warn().Str("engine", "pg").Msg("pg_dumpall has no native compression; BACKUP_COMPRESS=true is a no-op")
@@ -108,6 +114,10 @@ func (p *Postgres) dumpAllCommand(cfg *config.Config, mode string) (*exec.Cmd, e
 		}
 	}
 
+	if mode == "file" && outputFile != "" {
+		args = append(args, fmt.Sprintf("--file=%s", outputFile))
+	}
+
 	cmd := exec.Command("pg_dumpall", args...)
 	cmd.Stderr = os.Stderr
 	return cmd, nil
@@ -126,7 +136,7 @@ func (p *Postgres) SupportsCompression() bool { return true }
 
 // ConflictingFlags returns flags incompatible with stream mode.
 func (p *Postgres) ConflictingFlags(mode string) []string {
-	if mode == "stream" {
+	if mode == "stream" || mode == "file" {
 		return []string{"--Fd", "--format=directory", "-Fd", "--file=", "-f"}
 	}
 	return nil

@@ -114,9 +114,9 @@ func (c *Config) Prepare() error {
 
 	// Backup mode
 	c.BackupMode = strings.ToLower(c.BackupMode)
-	validModes := map[string]bool{"stream": true, "directory": true, "tar": true}
+	validModes := map[string]bool{"stream": true, "directory": true, "tar": true, "file": true}
 	if !validModes[c.BackupMode] {
-		return fmt.Errorf("invalid BACKUP_MODE %q (valid: stream, directory, tar)", c.BackupMode)
+		return fmt.Errorf("invalid BACKUP_MODE %q (valid: stream, directory, tar, file)", c.BackupMode)
 	}
 
 	// Notifications

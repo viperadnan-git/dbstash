@@ -40,8 +40,8 @@ func (m *MySQL) DumpCommand(cfg *config.Config, mode string, outputDir string) (
 	}
 
 	switch mode {
-	case "stream":
-		// Default stdout output
+	case "stream", "file":
+		// writes to stdout; file pipeline redirects stdout to temp file
 	case "directory":
 		if cfg.BackupAllDatabases {
 			return nil, fmt.Errorf("mysqldump --all-databases is incompatible with directory mode (--tab)")
@@ -99,7 +99,7 @@ func (m *MySQL) SupportsCompression() bool { return false }
 
 // ConflictingFlags returns flags incompatible with stream mode.
 func (m *MySQL) ConflictingFlags(mode string) []string {
-	if mode == "stream" {
+	if mode == "stream" || mode == "file" {
 		return []string{"--tab=", "--tab "}
 	}
 	return nil

@@ -17,8 +17,8 @@ func (r *Redis) Name() string { return "redis" }
 
 // DumpCommand builds the redis-cli command. Only stream mode is supported.
 func (r *Redis) DumpCommand(cfg *config.Config, mode string, _ string) (*exec.Cmd, error) {
-	if mode != "stream" {
-		return nil, fmt.Errorf("redis only supports stream mode (got %q)", mode)
+	if mode != "stream" && mode != "file" {
+		return nil, fmt.Errorf("redis only supports stream/file mode (got %q)", mode)
 	}
 
 	var args []string
