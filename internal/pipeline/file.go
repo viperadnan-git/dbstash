@@ -43,10 +43,11 @@ func (p *FilePipeline) Execute(ctx context.Context, eng engine.Engine, cfg *conf
 	// Build dump command — engines that support direct file output (mongo, pg)
 	// write to tempFilePath natively; others (mysql, redis) write to stdout
 	// which is redirected to tempFilePath via cmd.Stdout below.
-	dumpCmd, err := eng.DumpCommand(ctx, cfg, "file", tempFilePath)
+	dumpCmd, cleanupDump, err := eng.DumpCommand(ctx, cfg, "file", tempFilePath)
 	if err != nil {
 		return "", 0, fmt.Errorf("building dump command: %w", err)
 	}
+	defer cleanupDump()
 
 	// Open temp file; used as stdout fallback for engines that write to stdout
 	f, err := os.Create(tempFilePath)

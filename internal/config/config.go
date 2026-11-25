@@ -83,6 +83,15 @@ func (c *Config) Close() {
 	}
 }
 
+// Location is the time zone for schedules and filenames; UTC when TZ is unset.
+func (c *Config) Location() *time.Location {
+	loc, err := time.LoadLocation(c.Timezone)
+	if err != nil {
+		return time.UTC // Prepare rejects unknown zones
+	}
+	return loc
+}
+
 // SetRcloneConfig records the resolved rclone config path and the cleanup
 // that Close will run.
 func (c *Config) SetRcloneConfig(path string, cleanup func()) {
@@ -113,6 +122,11 @@ func (c *Config) Prepare() error {
 	// Connection
 	if c.DBURI == "" && (c.DBHost == "" || (c.DBName == "" && !c.BackupAllDatabases)) {
 		return fmt.Errorf("either DB_URI (or DB_URI_FILE) or DB_HOST + DB_NAME (or BACKUP_ALL_DATABASES=true) must be set")
+	}
+
+	// Timezone
+	if _, err := time.LoadLocation(c.Timezone); err != nil {
+		return fmt.Errorf("invalid TZ %q: %w", c.Timezone, err)
 	}
 
 	// Rclone remote
@@ -240,7 +254,7 @@ func ResolveRcloneConfig(configFilePath, base64Config string) (string, func(), e
 		if err != nil {
 			return "", nil, fmt.Errorf("RCLONE_CONFIG is not valid base64: %w", err)
 		}
-		return writeTempRcloneConfig(decoded)
+		return WriteTempFile("rclone-*.conf", decoded)
 	}
 
 	if configFilePath == "" {
@@ -262,22 +276,22 @@ func ResolveRcloneConfig(configFilePath, base64Config string) (string, func(), e
 	return configFilePath, func() {}, nil
 }
 
-// writeTempRcloneConfig writes data to a private temp file; a partial file is
-// removed on failure.
-func writeTempRcloneConfig(data []byte) (string, func(), error) {
-	f, err := os.CreateTemp("", "rclone-*.conf")
+// WriteTempFile writes data to a new owner-only (0600) temp file and returns
+// its path and a cleanup that removes it; a partial file is removed on failure.
+func WriteTempFile(pattern string, data []byte) (string, func(), error) {
+	f, err := os.CreateTemp("", pattern)
 	if err != nil {
-		return "", nil, fmt.Errorf("cannot create temp rclone config: %w", err)
+		return "", nil, fmt.Errorf("cannot create temp file: %w", err)
 	}
 	cleanup := func() { os.Remove(f.Name()) }
 	if _, err := f.Write(data); err != nil {
 		f.Close()
 		cleanup()
-		return "", nil, fmt.Errorf("cannot write temp rclone config: %w", err)
+		return "", nil, fmt.Errorf("cannot write temp file: %w", err)
 	}
 	if err := f.Close(); err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("cannot write temp rclone config: %w", err)
+		return "", nil, fmt.Errorf("cannot write temp file: %w", err)
 	}
 	return f.Name(), cleanup, nil
 }
@@ -398,4 +412,34 @@ func envOrDefaultInt(key string, fallback int) int {
 	var n int
 	fmt.Sscanf(v, "%d", &n)
 	return n
+}
+
+// SplitArgs splits DUMP_EXTRA_ARGS/RCLONE_EXTRA_ARGS into arguments, honouring
+// single and double quotes.
+func SplitArgs(s string) []string {
+	var args []string
+	var current strings.Builder
+	inSingle := false
+	inDouble := false
+
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\'' && !inDouble:
+			inSingle = !inSingle
+		case c == '"' && !inSingle:
+			inDouble = !inDouble
+		case c == ' ' && !inSingle && !inDouble:
+			if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteByte(c)
+		}
+	}
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+	return args
 }

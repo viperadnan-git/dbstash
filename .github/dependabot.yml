@@ -1,0 +1,32 @@
+version: 2
+# Minor and patch updates are grouped per ecosystem; majors get their own PRs.
+# Monthly: releases are rare; security updates still arrive immediately.
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      go-modules:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Literal FROM tags only (golang, rclone, alpine). ARG-based images such as
+  # postgres:${DB_VERSION}-alpine follow the CI matrix and are not updated.
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: monthly
+    groups:
+      docker-images:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: [minor, patch]

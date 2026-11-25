@@ -4,360 +4,183 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
-func clearEnv() {
-	for _, key := range []string{
-		"ENGINE", "DB_URI", "DB_URI_FILE", "DB_HOST", "DB_PORT", "DB_NAME",
-		"DB_USER", "DB_PASSWORD", "DB_PASSWORD_FILE", "DB_AUTH_SOURCE",
-		"RCLONE_REMOTE", "RCLONE_CONFIG", "RCLONE_CONFIG_FILE", "RCLONE_EXTRA_ARGS",
-		"BACKUP_SCHEDULE", "BACKUP_MODE", "BACKUP_NAME_TEMPLATE", "BACKUP_COMPRESS",
-		"BACKUP_EXTENSION", "BACKUP_ON_START", "BACKUP_ALL_DATABASES", "DUMP_EXTRA_ARGS", "TZ",
-		"BACKUP_TEMP_DIR", "RETENTION_MAX_FILES", "RETENTION_MAX_DAYS",
-		"NOTIFY_WEBHOOK_URL", "NOTIFY_ON", "LOG_LEVEL", "LOG_FORMAT",
-		"HOOK_PRE_BACKUP", "HOOK_POST_BACKUP", "BACKUP_TIMEOUT", "BACKUP_LOCK",
-		"DRY_RUN",
+const testRcloneConf = "[s3]\ntype = s3\n"
+
+var configEnvKeys = []string{
+	"ENGINE", "DB_URI", "DB_URI_FILE", "DB_HOST", "DB_PORT", "DB_NAME",
+	"DB_USER", "DB_PASSWORD", "DB_PASSWORD_FILE", "DB_AUTH_SOURCE",
+	"RCLONE_REMOTE", "RCLONE_CONFIG", "RCLONE_CONFIG_FILE", "RCLONE_EXTRA_ARGS",
+	"BACKUP_SCHEDULE", "BACKUP_MODE", "BACKUP_NAME_TEMPLATE", "BACKUP_COMPRESS",
+	"BACKUP_EXTENSION", "BACKUP_ON_START", "BACKUP_ALL_DATABASES", "DUMP_EXTRA_ARGS", "TZ",
+	"BACKUP_TEMP_DIR", "RETENTION_MAX_FILES", "RETENTION_MAX_DAYS",
+	"NOTIFY_WEBHOOK_URL", "NOTIFY_ON", "LOG_LEVEL", "LOG_FORMAT",
+	"HOOK_PRE_BACKUP", "HOOK_POST_BACKUP", "BACKUP_TIMEOUT", "BACKUP_LOCK", "DRY_RUN",
+}
+
+// setEnv clears every config variable, applies a valid baseline (pg over
+// host+name, an rclone config file), then the overrides. A "" override unsets.
+func setEnv(t *testing.T, overrides map[string]string) {
+	t.Helper()
+	for _, k := range configEnvKeys {
+		t.Setenv(k, "")
+	}
+	rcloneFile := filepath.Join(t.TempDir(), "rclone.conf")
+	os.WriteFile(rcloneFile, []byte(testRcloneConf), 0o600)
+	base := map[string]string{
+		"ENGINE": "pg", "DB_HOST": "localhost", "DB_NAME": "testdb",
+		"RCLONE_REMOTE": "s3:bucket/backups", "RCLONE_CONFIG_FILE": rcloneFile,
+	}
+	for k, v := range base {
+		t.Setenv(k, v)
+	}
+	for k, v := range overrides {
+		t.Setenv(k, v)
+	}
+}
+
+func writeFile(t *testing.T, content string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "f")
+	os.WriteFile(p, []byte(content), 0o600)
+	return p
+}
+
+func TestLoad_Defaults(t *testing.T) {
+	setEnv(t, nil)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer cfg.Close()
+	for name, got := range map[string][2]string{
+		"Engine":             {cfg.Engine, "pg"},
+		"BackupSchedule":     {cfg.BackupSchedule, "0 2 * * *"},
+		"BackupMode":         {cfg.BackupMode, "stream"},
+		"BackupNameTemplate": {cfg.BackupNameTemplate, "{db}-{timestamp}"},
+		"NotifyOn":           {cfg.NotifyOn, "failure"},
+		"LogLevel":           {cfg.LogLevel, "info"},
+		"LogFormat":          {cfg.LogFormat, "text"},
+		"Timezone":           {cfg.Timezone, "UTC"},
+		"BackupTempDir":      {cfg.BackupTempDir, "/tmp/dbstash-work"},
+		"DBAuthSource":       {cfg.DBAuthSource, "admin"},
 	} {
-		os.Unsetenv(key)
+		if got[0] != got[1] {
+			t.Errorf("%s = %q, want %q", name, got[0], got[1])
+		}
+	}
+	if !cfg.BackupLock || cfg.ScheduleOnce || cfg.BackupTimeout != 0 {
+		t.Errorf("BackupLock=%v ScheduleOnce=%v BackupTimeout=%v", cfg.BackupLock, cfg.ScheduleOnce, cfg.BackupTimeout)
 	}
 }
 
-func setMinimalEnv(t *testing.T) {
-	os.Setenv("ENGINE", "pg")
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("DB_NAME", "testdb")
-	os.Setenv("RCLONE_REMOTE", "s3:my-bucket/backups")
-
-	// Create temporary rclone config file
-	dir := t.TempDir()
-	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
-	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
-	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
-}
-
-func TestLoad_MinimalConfig(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestLoad_Valid(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   func(t *testing.T) map[string]string
+		check func(t *testing.T, c *Config)
+	}{
+		{"DB_URI", func(*testing.T) map[string]string {
+			return map[string]string{"ENGINE": "mongo", "DB_HOST": "", "DB_NAME": "", "DB_URI": "mongodb://u:p@h:27017/app"}
+		}, func(t *testing.T, c *Config) {
+			if c.DBURI != "mongodb://u:p@h:27017/app" {
+				t.Errorf("DBURI = %q", c.DBURI)
+			}
+		}},
+		{"DB_URI_FILE is read and trimmed", func(t *testing.T) map[string]string {
+			return map[string]string{"DB_HOST": "", "DB_NAME": "", "DB_URI_FILE": writeFile(t, "postgresql://h/prod\n")}
+		}, func(t *testing.T, c *Config) {
+			if c.DBURI != "postgresql://h/prod" {
+				t.Errorf("DBURI = %q", c.DBURI)
+			}
+		}},
+		{"DB_URI_FILE wins over DB_URI", func(t *testing.T) map[string]string {
+			return map[string]string{"DB_URI": "from-env", "DB_URI_FILE": writeFile(t, "from-file")}
+		}, func(t *testing.T, c *Config) {
+			if c.DBURI != "from-file" {
+				t.Errorf("DBURI = %q", c.DBURI)
+			}
+		}},
+		{"DB_PASSWORD_FILE is trimmed", func(t *testing.T) map[string]string {
+			return map[string]string{"DB_PASSWORD_FILE": writeFile(t, "  s3cret  \n")}
+		}, func(t *testing.T, c *Config) {
+			if c.DBPassword != "s3cret" {
+				t.Errorf("DBPassword = %q", c.DBPassword)
+			}
+		}},
+		{"schedule once is case-insensitive", func(*testing.T) map[string]string {
+			return map[string]string{"BACKUP_SCHEDULE": "Once"}
+		}, func(t *testing.T, c *Config) {
+			if !c.ScheduleOnce || c.BackupSchedule != "once" {
+				t.Errorf("ScheduleOnce=%v BackupSchedule=%q", c.ScheduleOnce, c.BackupSchedule)
+			}
+		}},
+		{"timeout", func(*testing.T) map[string]string {
+			return map[string]string{"BACKUP_TIMEOUT": "30m"}
+		}, func(t *testing.T, c *Config) {
+			if c.BackupTimeout != 30*time.Minute {
+				t.Errorf("BackupTimeout = %v", c.BackupTimeout)
+			}
+		}},
+		{"all databases over host", func(*testing.T) map[string]string {
+			return map[string]string{"DB_NAME": "", "BACKUP_ALL_DATABASES": "true"}
+		}, func(t *testing.T, c *Config) {
+			if !c.BackupAllDatabases || c.DBNameOrDefault() != "all" {
+				t.Errorf("BackupAllDatabases=%v DBNameOrDefault=%q", c.BackupAllDatabases, c.DBNameOrDefault())
+			}
+		}},
+		{"engine and mode are lower-cased", func(*testing.T) map[string]string {
+			return map[string]string{"ENGINE": "MariaDB", "BACKUP_MODE": "TAR"}
+		}, func(t *testing.T, c *Config) {
+			if c.Engine != "mariadb" || c.BackupMode != "tar" {
+				t.Errorf("Engine=%q BackupMode=%q", c.Engine, c.BackupMode)
+			}
+		}},
 	}
-
-	if cfg.Engine != "pg" {
-		t.Errorf("expected engine 'pg', got %q", cfg.Engine)
-	}
-	if cfg.DBHost != "localhost" {
-		t.Errorf("expected host 'localhost', got %q", cfg.DBHost)
-	}
-	if cfg.DBName != "testdb" {
-		t.Errorf("expected name 'testdb', got %q", cfg.DBName)
-	}
-	if cfg.BackupSchedule != "0 2 * * *" {
-		t.Errorf("expected default schedule, got %q", cfg.BackupSchedule)
-	}
-	if cfg.BackupMode != "stream" {
-		t.Errorf("expected default mode 'stream', got %q", cfg.BackupMode)
-	}
-	if cfg.BackupLock != true {
-		t.Error("expected BackupLock to be true by default")
-	}
-	if cfg.NotifyOn != "failure" {
-		t.Errorf("expected NotifyOn 'failure', got %q", cfg.NotifyOn)
-	}
-}
-
-func TestLoad_MissingEngine(t *testing.T) {
-	clearEnv()
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("DB_NAME", "testdb")
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for missing ENGINE")
-	}
-}
-
-func TestLoad_InvalidEngine(t *testing.T) {
-	clearEnv()
-	os.Setenv("ENGINE", "oracle")
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("DB_NAME", "testdb")
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid ENGINE")
-	}
-}
-
-func TestLoad_MissingConnection(t *testing.T) {
-	clearEnv()
-	os.Setenv("ENGINE", "pg")
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error when neither DB_URI nor DB_HOST+DB_NAME is set")
-	}
-}
-
-func TestLoad_MissingRcloneRemote(t *testing.T) {
-	clearEnv()
-	os.Setenv("ENGINE", "pg")
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("DB_NAME", "testdb")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for missing RCLONE_REMOTE")
-	}
-}
-
-func TestLoad_DBURI(t *testing.T) {
-	clearEnv()
-	os.Setenv("ENGINE", "mongo")
-	os.Setenv("DB_URI", "mongodb://user:pass@host:27017/mydb")
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-
-	// Create temporary rclone config file
-	dir := t.TempDir()
-	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
-	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
-	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.DBURI != "mongodb://user:pass@host:27017/mydb" {
-		t.Errorf("unexpected DB_URI: %q", cfg.DBURI)
-	}
-}
-
-func TestLoad_FileVariant(t *testing.T) {
-	clearEnv()
-
-	// Create temp file with URI
-	dir := t.TempDir()
-	uriFile := filepath.Join(dir, "db_uri.txt")
-	os.WriteFile(uriFile, []byte("postgresql://user:secret@dbhost:5432/prod\n"), 0o644)
-
-	// Create temporary rclone config file
-	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
-	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
-
-	os.Setenv("ENGINE", "pg")
-	os.Setenv("DB_URI_FILE", uriFile)
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.DBURI != "postgresql://user:secret@dbhost:5432/prod" {
-		t.Errorf("expected URI from file, got %q", cfg.DBURI)
-	}
-}
-
-func TestLoad_FileVariantPrecedence(t *testing.T) {
-	clearEnv()
-
-	dir := t.TempDir()
-	uriFile := filepath.Join(dir, "db_uri.txt")
-	os.WriteFile(uriFile, []byte("from-file"), 0o644)
-
-	// Create temporary rclone config file
-	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
-	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
-
-	os.Setenv("ENGINE", "pg")
-	os.Setenv("DB_URI", "from-env")
-	os.Setenv("DB_URI_FILE", uriFile)
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// _FILE variant takes precedence
-	if cfg.DBURI != "from-file" {
-		t.Errorf("expected _FILE to take precedence, got %q", cfg.DBURI)
-	}
-}
-
-func TestLoad_PasswordFile(t *testing.T) {
-	clearEnv()
-
-	dir := t.TempDir()
-	pwFile := filepath.Join(dir, "password.txt")
-	os.WriteFile(pwFile, []byte("  s3cret  \n"), 0o644)
-
-	// Create temporary rclone config file
-	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
-	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
-
-	os.Setenv("ENGINE", "pg")
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("DB_NAME", "testdb")
-	os.Setenv("DB_PASSWORD_FILE", pwFile)
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.DBPassword != "s3cret" {
-		t.Errorf("expected trimmed password 's3cret', got %q", cfg.DBPassword)
-	}
-}
-
-func TestLoad_ScheduleOnce(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-	os.Setenv("BACKUP_SCHEDULE", "once")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.ScheduleOnce {
-		t.Error("expected ScheduleOnce to be true")
-	}
-}
-
-func TestLoad_ScheduleOnceCaseInsensitive(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-	os.Setenv("BACKUP_SCHEDULE", "Once")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.ScheduleOnce {
-		t.Error("expected ScheduleOnce to be true for 'Once'")
-	}
-}
-
-func TestLoad_InvalidSchedule(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-	os.Setenv("BACKUP_SCHEDULE", "invalid-cron")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid cron expression")
-	}
-}
-
-func TestLoad_InvalidMode(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-	os.Setenv("BACKUP_MODE", "invalid")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid BACKUP_MODE")
-	}
-}
-
-func TestLoad_Timeout(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-	os.Setenv("BACKUP_TIMEOUT", "30m")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.BackupTimeout.Minutes() != 30 {
-		t.Errorf("expected 30m timeout, got %v", cfg.BackupTimeout)
-	}
-}
-
-func TestLoad_InvalidTimeout(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-	os.Setenv("BACKUP_TIMEOUT", "notaduration")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid BACKUP_TIMEOUT")
-	}
-}
-
-func TestLoad_InvalidNotifyOn(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-	os.Setenv("NOTIFY_ON", "never")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error for invalid NOTIFY_ON")
-	}
-}
-
-func TestLoad_AllEngines(t *testing.T) {
-	engines := []string{"pg", "mongo", "mysql", "mariadb", "redis"}
-	for _, eng := range engines {
-		t.Run(eng, func(t *testing.T) {
-			clearEnv()
-			os.Setenv("ENGINE", eng)
-			os.Setenv("DB_HOST", "localhost")
-			os.Setenv("DB_NAME", "testdb")
-			os.Setenv("RCLONE_REMOTE", "s3:bucket")
-
-			// Create temporary rclone config file
-			dir := t.TempDir()
-			rcloneConfigFile := filepath.Join(dir, "rclone.conf")
-			os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
-			os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
-
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setEnv(t, tt.env(t))
 			cfg, err := Load()
 			if err != nil {
-				t.Fatalf("unexpected error for engine %s: %v", eng, err)
+				t.Fatalf("unexpected error: %v", err)
 			}
-			if cfg.Engine != eng {
-				t.Errorf("expected engine %q, got %q", eng, cfg.Engine)
-			}
+			defer cfg.Close()
+			tt.check(t, cfg)
 		})
 	}
 }
 
-func TestLoad_Defaults(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
+// Each case must fail for its own reason, not an unrelated one.
+func TestLoad_Invalid(t *testing.T) {
 	tests := []struct {
-		name     string
-		got      string
-		expected string
+		name    string
+		env     map[string]string
+		wantErr string
 	}{
-		{"BackupMode", cfg.BackupMode, "stream"},
-		{"BackupNameTemplate", cfg.BackupNameTemplate, "{db}-{timestamp}"},
-		{"NotifyOn", cfg.NotifyOn, "failure"},
-		{"LogLevel", cfg.LogLevel, "info"},
-		{"LogFormat", cfg.LogFormat, "text"},
-		{"Timezone", cfg.Timezone, "UTC"},
-		{"BackupTempDir", cfg.BackupTempDir, "/tmp/dbstash-work"},
-		{"DBAuthSource", cfg.DBAuthSource, "admin"},
+		{"missing engine", map[string]string{"ENGINE": ""}, "ENGINE is required"},
+		{"unsupported engine", map[string]string{"ENGINE": "oracle"}, "unsupported ENGINE"},
+		{"missing connection", map[string]string{"DB_HOST": "", "DB_NAME": ""}, "either DB_URI"},
+		{"missing remote", map[string]string{"RCLONE_REMOTE": ""}, "RCLONE_REMOTE is required"},
+		{"invalid schedule", map[string]string{"BACKUP_SCHEDULE": "invalid-cron"}, "invalid BACKUP_SCHEDULE"},
+		{"invalid mode", map[string]string{"BACKUP_MODE": "invalid"}, "invalid BACKUP_MODE"},
+		{"invalid timeout", map[string]string{"BACKUP_TIMEOUT": "notaduration"}, "invalid BACKUP_TIMEOUT"},
+		{"invalid notify_on", map[string]string{"NOTIFY_ON": "never"}, "invalid NOTIFY_ON"},
+		{"db name with all databases", map[string]string{"BACKUP_ALL_DATABASES": "true"}, "mutually exclusive"},
+		{"missing rclone config file", map[string]string{"RCLONE_CONFIG_FILE": "/nonexistent/rclone.conf"}, "rclone config file not found"},
+		{"invalid rclone base64", map[string]string{"RCLONE_CONFIG": "not base64!"}, "RCLONE_CONFIG is not valid base64"},
+		{"unknown timezone", map[string]string{"TZ": "Mars/Base"}, "invalid TZ"},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.got != tt.expected {
-				t.Errorf("expected %q, got %q", tt.expected, tt.got)
+			setEnv(t, tt.env)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want containing %q", err, tt.wantErr)
 			}
 		})
 	}
@@ -365,84 +188,20 @@ func TestLoad_Defaults(t *testing.T) {
 
 func TestDBNameOrDefault(t *testing.T) {
 	tests := []struct {
-		name     string
-		cfg      Config
-		expected string
+		cfg  Config
+		want string
 	}{
-		{"all databases", Config{BackupAllDatabases: true}, "all"},
-		{"with name", Config{DBName: "mydb"}, "mydb"},
-		{"with uri", Config{DBURI: "postgres://host/db"}, "db"},
-		{"neither", Config{}, "unknown"},
+		{Config{BackupAllDatabases: true}, "all"},
+		{Config{DBName: "mydb"}, "mydb"},
+		{Config{DBURI: "postgres://host/db"}, "db"},
+		{Config{}, "unknown"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.cfg.DBNameOrDefault(); got != tt.expected {
-				t.Errorf("expected %q, got %q", tt.expected, got)
-			}
-		})
+		if got := tt.cfg.DBNameOrDefault(); got != tt.want {
+			t.Errorf("%+v: got %q, want %q", tt.cfg, got, tt.want)
+		}
 	}
 }
-
-func TestLoad_BackupAllDatabases(t *testing.T) {
-	clearEnv()
-	os.Setenv("ENGINE", "pg")
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("BACKUP_ALL_DATABASES", "true")
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-
-	dir := t.TempDir()
-	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
-	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
-	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.BackupAllDatabases {
-		t.Error("expected BackupAllDatabases to be true")
-	}
-}
-
-func TestLoad_BackupAllDatabases_MutualExclusion(t *testing.T) {
-	clearEnv()
-	os.Setenv("ENGINE", "pg")
-	os.Setenv("DB_HOST", "localhost")
-	os.Setenv("DB_NAME", "testdb")
-	os.Setenv("BACKUP_ALL_DATABASES", "true")
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error when both DB_NAME and BACKUP_ALL_DATABASES are set")
-	}
-}
-
-func TestLoad_BackupAllDatabases_WithURI(t *testing.T) {
-	clearEnv()
-	os.Setenv("ENGINE", "mongo")
-	os.Setenv("DB_URI", "mongodb://host:27017")
-	os.Setenv("BACKUP_ALL_DATABASES", "true")
-	os.Setenv("RCLONE_REMOTE", "s3:bucket")
-
-	dir := t.TempDir()
-	rcloneConfigFile := filepath.Join(dir, "rclone.conf")
-	os.WriteFile(rcloneConfigFile, []byte("[s3]\ntype = s3\n"), 0o644)
-	os.Setenv("RCLONE_CONFIG_FILE", rcloneConfigFile)
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !cfg.BackupAllDatabases {
-		t.Error("expected BackupAllDatabases to be true")
-	}
-	if cfg.DBNameOrDefault() != "all" {
-		t.Errorf("expected DBNameOrDefault 'all', got %q", cfg.DBNameOrDefault())
-	}
-}
-
-const testRcloneConf = "[s3]\ntype = s3\n"
 
 // isolateTemp points os.CreateTemp at a fresh dir and returns a counter of
 // rclone temp configs left in it.
@@ -456,70 +215,93 @@ func isolateTemp(t *testing.T) func() int {
 	}
 }
 
-func TestResolveRcloneConfig_Base64Cleanup(t *testing.T) {
-	leftover := isolateTemp(t)
-	path, cleanup, err := ResolveRcloneConfig("", base64.StdEncoding.EncodeToString([]byte(testRcloneConf)))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got, _ := os.ReadFile(path); string(got) != testRcloneConf {
-		t.Fatalf("temp config content = %q", got)
-	}
-	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
-		t.Errorf("temp config mode = %v, want 0600", info.Mode().Perm())
-	}
-	cleanup()
-	cleanup()
-	if n := leftover(); n != 0 {
-		t.Fatalf("%d temp config(s) left after cleanup", n)
-	}
+func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+
+func TestResolveRcloneConfig(t *testing.T) {
+	t.Run("base64 is written privately and cleaned up", func(t *testing.T) {
+		leftover := isolateTemp(t)
+		path, cleanup, err := ResolveRcloneConfig("", b64(testRcloneConf))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := os.ReadFile(path); string(got) != testRcloneConf {
+			t.Fatalf("content = %q", got)
+		}
+		if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+			t.Errorf("mode = %v, want 0600", info.Mode().Perm())
+		}
+		cleanup()
+		cleanup()
+		if n := leftover(); n != 0 {
+			t.Fatalf("%d temp config(s) left", n)
+		}
+	})
+
+	t.Run("line-wrapped base64 is accepted", func(t *testing.T) {
+		isolateTemp(t)
+		enc := b64(testRcloneConf)
+		path, cleanup, err := ResolveRcloneConfig("", enc[:8]+"\n"+enc[8:]+"\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cleanup()
+		if got, _ := os.ReadFile(path); string(got) != testRcloneConf {
+			t.Fatalf("content = %q", got)
+		}
+	})
+
+	t.Run("caller's file is never removed", func(t *testing.T) {
+		path := writeFile(t, testRcloneConf)
+		got, cleanup, err := ResolveRcloneConfig(path, "")
+		if err != nil || got != path {
+			t.Fatalf("got %q, %v", got, err)
+		}
+		cleanup()
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("caller's config removed: %v", err)
+		}
+	})
+
+	t.Run("invalid base64 does not fall back to the default config", func(t *testing.T) {
+		leftover := isolateTemp(t)
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		os.MkdirAll(filepath.Join(home, ".config", "rclone"), 0o700)
+		os.WriteFile(filepath.Join(home, ".config", "rclone", "rclone.conf"), []byte(testRcloneConf), 0o600)
+		if _, _, err := ResolveRcloneConfig("", "not base64!"); err == nil {
+			t.Fatal("expected an error")
+		}
+		if n := leftover(); n != 0 {
+			t.Fatalf("%d temp config(s) left", n)
+		}
+	})
 }
 
-func TestResolveRcloneConfig_FilePathKept(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "rclone.conf")
-	os.WriteFile(path, []byte(testRcloneConf), 0o600)
-	got, cleanup, err := ResolveRcloneConfig(path, "")
-	if err != nil || got != path {
-		t.Fatalf("got %q, %v; want %q", got, err, path)
-	}
-	cleanup()
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("cleanup removed the caller's config: %v", err)
-	}
-}
+func TestLoad_TempRcloneConfigLifetime(t *testing.T) {
+	t.Run("removed on Close", func(t *testing.T) {
+		setEnv(t, map[string]string{"RCLONE_CONFIG": b64(testRcloneConf)})
+		leftover := isolateTemp(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if leftover() != 1 {
+			t.Fatal("temp config should exist while the Config is open")
+		}
+		cfg.Close()
+		cfg.Close()
+		if n := leftover(); n != 0 {
+			t.Fatalf("%d temp config(s) left after Close", n)
+		}
+	})
 
-func TestLoad_CloseRemovesTempRcloneConfig(t *testing.T) {
-	clearEnv()
-	setMinimalEnv(t)
-	leftover := isolateTemp(t)
-	os.Setenv("RCLONE_CONFIG", base64.StdEncoding.EncodeToString([]byte(testRcloneConf)))
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if leftover() != 1 {
-		t.Fatalf("expected the temp config to exist while the Config is open")
-	}
-	cfg.Close()
-	cfg.Close()
-	if n := leftover(); n != 0 {
-		t.Fatalf("%d temp config(s) left after Close", n)
-	}
-}
-
-func TestLoad_ErrorRemovesTempRcloneConfig(t *testing.T) {
 	for name, env := range map[string][2]string{
-		"validation": {"DB_HOST", ""},
-		"timeout":    {"BACKUP_TIMEOUT", "not-a-duration"},
+		"removed when validation fails": {"DB_HOST", ""},
+		"removed when parsing fails":    {"BACKUP_TIMEOUT", "not-a-duration"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			clearEnv()
-			setMinimalEnv(t)
+			setEnv(t, map[string]string{"RCLONE_CONFIG": b64(testRcloneConf), env[0]: env[1]})
 			leftover := isolateTemp(t)
-			os.Setenv("RCLONE_CONFIG", base64.StdEncoding.EncodeToString([]byte(testRcloneConf)))
-			os.Setenv(env[0], env[1])
-
 			if _, err := Load(); err == nil {
 				t.Fatal("expected error")
 			}
@@ -528,40 +310,24 @@ func TestLoad_ErrorRemovesTempRcloneConfig(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Close is safe on nil and empty configs", func(t *testing.T) {
+		var nilCfg *Config
+		nilCfg.Close()
+		(&Config{}).Close()
+	})
 }
 
-func TestConfigClose_NilAndNoCleanup(t *testing.T) {
-	var nilCfg *Config
-	nilCfg.Close()
-	(&Config{}).Close()
-}
-
-func TestResolveRcloneConfig_InvalidBase64(t *testing.T) {
-	leftover := isolateTemp(t)
-	// A valid default config must not be used as a silent fallback.
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	os.MkdirAll(filepath.Join(home, ".config", "rclone"), 0o700)
-	os.WriteFile(filepath.Join(home, ".config", "rclone", "rclone.conf"), []byte(testRcloneConf), 0o600)
-
-	if _, _, err := ResolveRcloneConfig("", "not base64!"); err == nil {
-		t.Fatal("expected an error for invalid base64")
+func TestSplitArgs(t *testing.T) {
+	tests := map[string][]string{
+		"":                           nil,
+		"--a --b=1":                  {"--a", "--b=1"},
+		`--x "a b" 'c d'`:            {"--x", "a b", "c d"},
+		`--q="it's"  --r='say "hi"'`: {"--q=it's", `--r=say "hi"`},
 	}
-	if n := leftover(); n != 0 {
-		t.Fatalf("%d temp config(s) left", n)
-	}
-}
-
-func TestResolveRcloneConfig_WrappedBase64(t *testing.T) {
-	isolateTemp(t)
-	enc := base64.StdEncoding.EncodeToString([]byte(testRcloneConf))
-	wrapped := enc[:8] + "\n" + enc[8:] + "\n" // GNU base64 wraps at 76 columns
-	path, cleanup, err := ResolveRcloneConfig("", wrapped)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	defer cleanup()
-	if got, _ := os.ReadFile(path); string(got) != testRcloneConf {
-		t.Fatalf("temp config content = %q", got)
+	for in, want := range tests {
+		if got := SplitArgs(in); !slices.Equal(got, want) {
+			t.Errorf("SplitArgs(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

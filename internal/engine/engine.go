@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -20,8 +21,10 @@ type Engine interface {
 	// DumpCommand returns the exec.Cmd for the dump tool.
 	// For stream mode, the command writes to stdout.
 	// For directory mode, it writes to the provided outputDir.
-	// The command is killed when ctx is done.
-	DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error)
+	// The command is killed when ctx is done. Credentials never go in its
+	// arguments; cleanup removes any option file holding them and must run
+	// once the command has exited. cleanup is never nil when err is nil.
+	DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (cmd *exec.Cmd, cleanup func(), err error)
 
 	// DefaultExtension returns the file extension based on compression setting.
 	DefaultExtension(compressed bool) string
@@ -69,32 +72,25 @@ func stripDBFromURI(uri string) string {
 	return u.String()
 }
 
-// shellSplit performs basic splitting of a string into arguments, respecting
-// single and double quotes. This is used to split DUMP_EXTRA_ARGS.
-func shellSplit(s string) []string {
-	var args []string
-	var current strings.Builder
-	inSingle := false
-	inDouble := false
+func noCleanup() {}
 
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c == '\'' && !inDouble:
-			inSingle = !inSingle
-		case c == '"' && !inSingle:
-			inDouble = !inDouble
-		case c == ' ' && !inSingle && !inDouble:
-			if current.Len() > 0 {
-				args = append(args, current.String())
-				current.Reset()
-			}
-		default:
-			current.WriteByte(c)
-		}
+// splitPassword returns uri without its password, and the password.
+func splitPassword(uri string) (string, string) {
+	u, err := url.Parse(uri)
+	if err != nil || u.User == nil {
+		return uri, ""
 	}
-	if current.Len() > 0 {
-		args = append(args, current.String())
+	pw, ok := u.User.Password()
+	if !ok {
+		return uri, ""
 	}
-	return args
+	u.User = url.User(u.User.Username())
+	return u.String(), pw
+}
+
+// withEnv adds vars to the environment cmd inherits.
+func withEnv(cmd *exec.Cmd, vars ...string) {
+	if len(vars) > 0 {
+		cmd.Env = append(os.Environ(), vars...)
+	}
 }

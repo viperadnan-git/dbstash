@@ -24,13 +24,23 @@ services:
         DB_VERSION: "17"
     image: ghcr.io/viperadnan-git/dbstash:pg-17
 
-  # MongoDB
-  mongo-6:
+  pg-18:
     build:
       context: .
-      dockerfile: docker/Dockerfile.mongo
-    image: ghcr.io/viperadnan-git/dbstash:mongo-6
+      dockerfile: docker/Dockerfile.pg
+      args:
+        DB_VERSION: "18"
+    image: ghcr.io/viperadnan-git/dbstash:pg-18
 
+  pg-19:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pg
+      args:
+        DB_VERSION: "19"
+    image: ghcr.io/viperadnan-git/dbstash:pg-19
+
+  # MongoDB
   mongo-7:
     build:
       context: .
@@ -42,6 +52,12 @@ services:
       context: .
       dockerfile: docker/Dockerfile.mongo
     image: ghcr.io/viperadnan-git/dbstash:mongo-8
+
+  mongo-9:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mongo
+    image: ghcr.io/viperadnan-git/dbstash:mongo-9
 
   # MySQL
   mysql-8:
@@ -60,24 +76,30 @@ services:
         DB_VERSION: "9"
     image: ghcr.io/viperadnan-git/dbstash:mysql-9
 
-  # MariaDB (uses mysql Dockerfile with ENGINE_NAME override)
+  # MariaDB
   mariadb-10:
     build:
       context: .
-      dockerfile: docker/Dockerfile.mysql
+      dockerfile: docker/Dockerfile.mariadb
       args:
         DB_VERSION: "10"
-        ENGINE_NAME: mariadb
     image: ghcr.io/viperadnan-git/dbstash:mariadb-10
 
   mariadb-11:
     build:
       context: .
-      dockerfile: docker/Dockerfile.mysql
+      dockerfile: docker/Dockerfile.mariadb
       args:
         DB_VERSION: "11"
-        ENGINE_NAME: mariadb
     image: ghcr.io/viperadnan-git/dbstash:mariadb-11
+
+  mariadb-12:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mariadb
+      args:
+        DB_VERSION: "12"
+    image: ghcr.io/viperadnan-git/dbstash:mariadb-12
 
   # Redis
   redis-7:

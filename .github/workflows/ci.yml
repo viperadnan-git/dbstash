@@ -1,0 +1,83 @@
+name: CI
+
+# Pushes to main and tags run this through release.yml, before publishing.
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race ./...
+
+      - name: Build release targets
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
+            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build -o /dev/null ./cmd/dbstash
+          done
+
+  e2e:
+    name: e2e ${{ matrix.engine }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: pg
+            dockerfile: docker/Dockerfile.pg
+            db_version: "19"
+            db_image: postgres:19-alpine
+          - engine: mongo
+            dockerfile: docker/Dockerfile.mongo
+            db_version: ""
+            db_image: mongo:9
+          - engine: mysql
+            dockerfile: docker/Dockerfile.mysql
+            db_version: "9"
+            db_image: mysql:9
+          - engine: mariadb
+            dockerfile: docker/Dockerfile.mariadb
+            db_version: "12"
+            db_image: mariadb:12
+          - engine: redis
+            dockerfile: docker/Dockerfile.redis
+            db_version: "8"
+            db_image: redis:8-alpine
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -f "${{ matrix.dockerfile }}" --build-arg "DB_VERSION=${{ matrix.db_version }}" -t dbstash-e2e .
+
+      - name: Backup, restore and stop
+        run: scripts/e2e.sh "${{ matrix.engine }}" dbstash-e2e "${{ matrix.db_image }}"

@@ -37,10 +37,11 @@ func (p *DirectoryPipeline) Execute(ctx context.Context, eng engine.Engine, cfg 
 	defer os.RemoveAll(tempDir)
 
 	// Run dump to temp dir
-	dumpCmd, err := eng.DumpCommand(ctx, cfg, "directory", tempDir)
+	dumpCmd, cleanupDump, err := eng.DumpCommand(ctx, cfg, "directory", tempDir)
 	if err != nil {
 		return "", 0, fmt.Errorf("building dump command: %w", err)
 	}
+	defer cleanupDump()
 	var dumpStderr bytes.Buffer
 	dumpCmd.Stderr = &dumpStderr
 

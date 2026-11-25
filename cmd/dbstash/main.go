@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // TZ works on bases without zoneinfo
 
 	"github.com/urfave/cli/v3"
 	"github.com/viperadnan-git/dbstash/internal/config"
@@ -484,10 +485,11 @@ func dryRun(cfg *config.Config, eng engine.Engine) {
 	}
 
 	// Build a sample dump command
-	cmd, err := eng.DumpCommand(context.Background(), cfg, cfg.BackupMode, "/tmp/dbstash-dry-run")
+	cmd, cleanup, err := eng.DumpCommand(context.Background(), cfg, cfg.BackupMode, "/tmp/dbstash-dry-run")
 	if err != nil {
 		log.Warn().Err(err).Msg("could not build dump command for dry run")
 	} else {
+		cleanup()
 		log.Info().Str("command", config.MaskCmdArgs(cmd.Args)).Msg("dump command")
 	}
 

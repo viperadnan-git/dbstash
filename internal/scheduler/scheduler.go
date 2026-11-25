@@ -64,7 +64,7 @@ func (s *Scheduler) RunNow() {
 
 // Start begins the cron scheduler.
 func (s *Scheduler) Start() error {
-	s.cron = cron.New()
+	s.cron = cron.New(cron.WithLocation(s.cfg.Location()))
 
 	_, err := s.cron.AddFunc(s.cfg.BackupSchedule, func() {
 		s.runWithLock()

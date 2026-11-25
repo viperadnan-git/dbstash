@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,7 +18,7 @@ type Mongo struct{}
 func (m *Mongo) Name() string { return "mongo" }
 
 // DumpCommand builds the mongodump command for the given mode.
-func (m *Mongo) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
+func (m *Mongo) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, func(), error) {
 	var args []string
 
 	switch mode {
@@ -37,19 +38,25 @@ func (m *Mongo) DumpCommand(ctx context.Context, cfg *config.Config, mode string
 			args = append(args, "--gzip")
 		}
 	default:
-		return nil, fmt.Errorf("unsupported mode for mongo: %s", mode)
+		return nil, nil, fmt.Errorf("unsupported mode for mongo: %s", mode)
 	}
 
-	// Connection
+	// Connection; credentials go in a --config file
+	secrets := map[string]string{}
 	if cfg.DBURI != "" {
+		uri := cfg.DBURI
 		if cfg.BackupAllDatabases {
-			// Strip database name from URI so mongodump dumps all databases
-			args = append(args, fmt.Sprintf("--uri=%s", stripDBFromURI(cfg.DBURI)))
+			uri = stripDBFromURI(uri) // so mongodump dumps all databases
+		}
+		if _, pw := splitPassword(uri); pw != "" {
+			secrets["uri"] = uri
 		} else {
-			args = append(args, fmt.Sprintf("--uri=%s", cfg.DBURI))
+			args = append(args, fmt.Sprintf("--uri=%s", uri))
+		}
+		if !cfg.BackupAllDatabases {
 			dbName := dbNameFromURI(cfg.DBURI)
 			if dbName == "" {
-				return nil, fmt.Errorf("mongo URI has no database name; set DB_NAME, add a database to the URI, or use --all-databases")
+				return nil, nil, fmt.Errorf("mongo URI has no database name; set DB_NAME, add a database to the URI, or use --all-databases")
 			}
 			args = append(args, fmt.Sprintf("--db=%s", dbName))
 		}
@@ -67,7 +74,7 @@ func (m *Mongo) DumpCommand(ctx context.Context, cfg *config.Config, mode string
 			args = append(args, fmt.Sprintf("--username=%s", cfg.DBUser))
 		}
 		if cfg.DBPassword != "" {
-			args = append(args, fmt.Sprintf("--password=%s", cfg.DBPassword))
+			secrets["password"] = cfg.DBPassword
 		}
 		if cfg.DBAuthSource != "" {
 			args = append(args, fmt.Sprintf("--authenticationDatabase=%s", cfg.DBAuthSource))
@@ -76,12 +83,26 @@ func (m *Mongo) DumpCommand(ctx context.Context, cfg *config.Config, mode string
 
 	// Extra args
 	if cfg.DumpExtraArgs != "" {
-		args = append(args, shellSplit(cfg.DumpExtraArgs)...)
+		args = append(args, config.SplitArgs(cfg.DumpExtraArgs)...)
 	}
 
+	cleanup := noCleanup
+	if len(secrets) > 0 {
+		var yaml []byte
+		for k, v := range secrets {
+			q, _ := json.Marshal(v) // a JSON string is a valid YAML scalar
+			yaml = fmt.Appendf(yaml, "%s: %s\n", k, q)
+		}
+		path, rm, err := config.WriteTempFile("dbstash-*.yaml", yaml)
+		if err != nil {
+			return nil, nil, err
+		}
+		args = append(args, "--config="+path)
+		cleanup = rm
+	}
 	cmd := proc.Command(ctx, "mongodump", args...)
 	cmd.Stderr = os.Stderr
-	return cmd, nil
+	return cmd, cleanup, nil
 }
 
 // DefaultExtension returns the file extension based on compression.

@@ -25,10 +25,11 @@ func (p *StreamPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *co
 	log.Debug().Msg("starting stream pipeline")
 
 	// Build dump command
-	dumpCmd, err := eng.DumpCommand(ctx, cfg, "stream", "")
+	dumpCmd, cleanupDump, err := eng.DumpCommand(ctx, cfg, "stream", "")
 	if err != nil {
 		return "", 0, fmt.Errorf("building dump command: %w", err)
 	}
+	defer cleanupDump()
 
 	// Build rclone command
 	rcloneArgs := []string{"rcat", remotePath}

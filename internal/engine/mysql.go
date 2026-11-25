@@ -22,7 +22,7 @@ type MySQL struct {
 func (m *MySQL) Name() string { return m.engineKey }
 
 // DumpCommand builds the mysqldump command for the given mode.
-func (m *MySQL) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
+func (m *MySQL) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, func(), error) {
 	var args []string
 
 	// Resolve connection params — mysqldump doesn't accept URIs directly
@@ -37,20 +37,17 @@ func (m *MySQL) DumpCommand(ctx context.Context, cfg *config.Config, mode string
 	if user != "" {
 		args = append(args, fmt.Sprintf("--user=%s", user))
 	}
-	if password != "" {
-		args = append(args, fmt.Sprintf("-p%s", password))
-	}
 
 	switch mode {
 	case "stream", "file":
 		// writes to stdout; file pipeline redirects stdout to temp file
 	case "directory":
 		if cfg.BackupAllDatabases {
-			return nil, fmt.Errorf("mysqldump --all-databases is incompatible with directory mode (--tab)")
+			return nil, nil, fmt.Errorf("mysqldump --all-databases is incompatible with directory mode (--tab)")
 		}
 		args = append(args, fmt.Sprintf("--tab=%s", outputDir))
 	default:
-		return nil, fmt.Errorf("unsupported mode for mysql: %s", mode)
+		return nil, nil, fmt.Errorf("unsupported mode for mysql: %s", mode)
 	}
 
 	if cfg.BackupCompress {
@@ -59,7 +56,7 @@ func (m *MySQL) DumpCommand(ctx context.Context, cfg *config.Config, mode string
 
 	// Extra args
 	if cfg.DumpExtraArgs != "" {
-		args = append(args, shellSplit(cfg.DumpExtraArgs)...)
+		args = append(args, config.SplitArgs(cfg.DumpExtraArgs)...)
 	}
 
 	// Database selection
@@ -68,12 +65,36 @@ func (m *MySQL) DumpCommand(ctx context.Context, cfg *config.Config, mode string
 	} else if dbName != "" {
 		args = append(args, dbName)
 	} else {
-		return nil, fmt.Errorf("no database name found; set DB_NAME, add a database to the URI, or use --all-databases")
+		return nil, nil, fmt.Errorf("no database name found; set DB_NAME, add a database to the URI, or use --all-databases")
 	}
 
-	cmd := proc.Command(ctx, "mysqldump", args...)
+	// mariadb-dump: MariaDB 11+ clients may not ship the mysqldump alias.
+	bin := "mysqldump"
+	if m.engineKey == "mariadb" {
+		bin = "mariadb-dump"
+	}
+	cleanup := noCleanup
+	if password != "" {
+		path, rm, err := config.WriteTempFile("dbstash-*.cnf", []byte("[client]\npassword="+optionValue(password)+"\n"))
+		if err != nil {
+			return nil, nil, err
+		}
+		args = append([]string{"--defaults-extra-file=" + path}, args...) // must come first
+		cleanup = rm
+	}
+	cmd := proc.Command(ctx, bin, args...)
 	cmd.Stderr = os.Stderr
-	return cmd, nil
+	return cmd, cleanup, nil
+}
+
+// optionValue quotes s for a MySQL option file.
+func optionValue(s string) string {
+	s = strings.NewReplacer(`\`, `\\`, "\n", `\n`).Replace(s)
+	q := `"`
+	if strings.Contains(s, q) {
+		q = "'"
+	}
+	return q + s + q
 }
 
 // resolveConnection parses DB_URI into components or uses individual vars.

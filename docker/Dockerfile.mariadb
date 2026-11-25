@@ -1,0 +1,20 @@
+# Build arguments
+ARG DB_VERSION=12
+
+# Stage 1: Build Go binary
+FROM golang:1.27-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /dbstash ./cmd/dbstash
+
+# Static rclone, so every image ships the same version
+FROM rclone/rclone:1.75 AS rclone
+
+# Stage 2: Official MariaDB image, so mariadb-dump matches the server version
+FROM mariadb:${DB_VERSION}
+COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
+COPY --from=builder /dbstash /usr/local/bin/dbstash
+ENV ENGINE=mariadb
+ENTRYPOINT ["dbstash"]

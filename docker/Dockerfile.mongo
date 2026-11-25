@@ -1,14 +1,18 @@
 # Stage 1: Build Go binary
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /dbstash ./cmd/dbstash
 
-# Stage 2: Runtime image with mongodump + rclone
-FROM alpine:3.20
-RUN apk add --no-cache mongodb-tools rclone ca-certificates tzdata
+# Static rclone, so every image ships the same version
+FROM rclone/rclone:1.75 AS rclone
+
+# Stage 2: Runtime image with mongodump
+FROM alpine:3.24
+RUN apk add --no-cache mongodb-tools ca-certificates tzdata
+COPY --from=rclone /usr/local/bin/rclone /usr/local/bin/rclone
 COPY --from=builder /dbstash /usr/local/bin/dbstash
 ENV ENGINE=mongo
 ENTRYPOINT ["dbstash"]

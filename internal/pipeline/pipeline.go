@@ -75,12 +75,7 @@ func New(mode string) (Pipeline, error) {
 // compression setting, unless overridden by BACKUP_EXTENSION. Timestamps
 // use the timezone configured via the TZ environment variable (default UTC).
 func resolveFilename(template string, cfg *config.Config, eng engine.Engine, extension string) string {
-	now := time.Now()
-	if cfg.Timezone != "" && cfg.Timezone != "UTC" {
-		if loc, err := time.LoadLocation(cfg.Timezone); err == nil {
-			now = now.In(loc)
-		}
-	}
+	now := time.Now().In(cfg.Location())
 
 	dbName := cfg.DBNameOrDefault()
 	shortUUID := uuid.Must(uuid.NewV7()).String()[:8]
@@ -107,12 +102,7 @@ func resolveFilename(template string, cfg *config.Config, eng engine.Engine, ext
 
 // resolveDirname expands the template for directory mode (no extension).
 func resolveDirname(template string, cfg *config.Config, eng engine.Engine) string {
-	now := time.Now()
-	if cfg.Timezone != "" && cfg.Timezone != "UTC" {
-		if loc, err := time.LoadLocation(cfg.Timezone); err == nil {
-			now = now.In(loc)
-		}
-	}
+	now := time.Now().In(cfg.Location())
 
 	dbName := cfg.DBNameOrDefault()
 	shortUUID := uuid.Must(uuid.NewV7()).String()[:8]
@@ -180,35 +170,7 @@ func rcloneConfigArgs(cfg *config.Config) []string {
 		args = append(args, "--config", cfg.RcloneConfigFile)
 	}
 	if cfg.RcloneExtraArgs != "" {
-		args = append(args, shellSplit(cfg.RcloneExtraArgs)...)
-	}
-	return args
-}
-
-func shellSplit(s string) []string {
-	var args []string
-	var current strings.Builder
-	inSingle := false
-	inDouble := false
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c == '\'' && !inDouble:
-			inSingle = !inSingle
-		case c == '"' && !inSingle:
-			inDouble = !inDouble
-		case c == ' ' && !inSingle && !inDouble:
-			if current.Len() > 0 {
-				args = append(args, current.String())
-				current.Reset()
-			}
-		default:
-			current.WriteByte(c)
-		}
-	}
-	if current.Len() > 0 {
-		args = append(args, current.String())
+		args = append(args, config.SplitArgs(cfg.RcloneExtraArgs)...)
 	}
 	return args
 }

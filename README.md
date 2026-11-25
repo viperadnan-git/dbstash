@@ -1,6 +1,6 @@
 # dbstash
 
-[![Build Status](https://img.shields.io/github/actions/workflow/status/viperadnan-git/dbstash/build.yml?branch=main&logo=github)](https://github.com/viperadnan-git/dbstash/actions)
+[![Release](https://img.shields.io/github/actions/workflow/status/viperadnan-git/dbstash/release.yml?branch=main&logo=github)](https://github.com/viperadnan-git/dbstash/actions)
 [![Docker Pulls](https://img.shields.io/docker/pulls/viperadnan/dbstash?logo=docker)](https://hub.docker.com/r/viperadnan/dbstash)
 [![Docker Image Size](https://img.shields.io/docker/image-size/viperadnan/dbstash/pg?logo=docker&label=image%20size)](https://hub.docker.com/r/viperadnan/dbstash)
 [![GitHub Stars](https://img.shields.io/github/stars/viperadnan-git/dbstash?logo=github)](https://github.com/viperadnan-git/dbstash/stargazers)
@@ -41,7 +41,7 @@ docker run --rm \
   -e RCLONE_REMOTE="s3:my-bucket/backups" \
   -e BACKUP_SCHEDULE=once \
   -v /path/to/rclone.conf:/root/.config/rclone/rclone.conf:ro \
-  ghcr.io/viperadnan-git/dbstash:pg-17
+  ghcr.io/viperadnan-git/dbstash:pg-19
 
 # Dump all MongoDB databases
 docker run --rm \
@@ -50,12 +50,12 @@ docker run --rm \
   -e RCLONE_REMOTE="s3:my-bucket/backups" \
   -e BACKUP_SCHEDULE=once \
   -v /path/to/rclone.conf:/root/.config/rclone/rclone.conf:ro \
-  ghcr.io/viperadnan-git/dbstash:mongo-8
+  ghcr.io/viperadnan-git/dbstash:mongo-9
 ```
 
 ## CLI Usage
 
-dbstash is also available as a standalone binary. Pre-built binaries for Linux, macOS, and Windows can be downloaded from [Releases](https://github.com/viperadnan-git/dbstash/releases). Requires `rclone` and the engine's dump tool (`pg_dump`, `mongodump`, `mysqldump`, `redis-cli`) to be installed.
+dbstash is also available as a standalone binary. Pre-built binaries for Linux, macOS, and Windows can be downloaded from [Releases](https://github.com/viperadnan-git/dbstash/releases). Requires `rclone` and the engine's dump tool (`pg_dump`, `mongodump`, `mysqldump` or `mariadb-dump`, `redis-cli`) to be installed.
 
 ```bash
 dbstash <engine> [flags]
@@ -70,16 +70,16 @@ Flags and environment variables can be mixed. **Precedence:** CLI flag > environ
 
 | Database   | Engine Key | Latest Alias Tags | Version-Specific Tags | Latest Version |
 |------------|------------|-------------------|------------------------|----------------|
-| PostgreSQL | `pg`       | `:pg`, `:pg-latest` | `:pg-15`, `:pg-16`, `:pg-17` | 17 |
-| MongoDB    | `mongo`    | `:mongo`, `:mongo-latest` | `:mongo-7`, `:mongo-8` | 8 |
+| PostgreSQL | `pg`       | `:pg`, `:pg-latest` | `:pg-15`, `:pg-16`, `:pg-17`, `:pg-18`, `:pg-19` | 19 |
+| MongoDB    | `mongo`    | `:mongo`, `:mongo-latest` | `:mongo-7`, `:mongo-8`, `:mongo-9` | 9 |
 | MySQL      | `mysql`    | `:mysql`, `:mysql-latest` | `:mysql-8`, `:mysql-9` | 9 |
-| MariaDB    | `mariadb`  | `:mariadb`, `:mariadb-latest` | `:mariadb-10`, `:mariadb-11` | 11 |
+| MariaDB    | `mariadb`  | `:mariadb`, `:mariadb-latest` | `:mariadb-10`, `:mariadb-11`, `:mariadb-12` | 12 |
 | Redis      | `redis`    | `:redis`, `:redis-latest` | `:redis-7`, `:redis-8` | 8 |
 
 **Tag Strategy:**
-- **`:engine-version`** (e.g. `:pg-17`) — Pinned to specific database version
+- **`:engine-version`** (e.g. `:pg-19`) — Pinned to specific database version
 - **`:engine`** and **`:engine-latest`** (e.g. `:pg`, `:pg-latest`) — Both point to the latest version
-- **`:engine-version-dbstashversion`** (e.g. `:pg-17-0.7.0`) — Created on git tag releases
+- **`:engine-version-dbstashversion`** (e.g. `:pg-19-0.7.0`) — Created on git tag releases
 
 All images: `ghcr.io/viperadnan-git/dbstash:<tag>`
 

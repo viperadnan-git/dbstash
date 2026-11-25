@@ -18,7 +18,7 @@ type Postgres struct{}
 func (p *Postgres) Name() string { return "pg" }
 
 // DumpCommand builds the pg_dump (or pg_dumpall) command for the given mode.
-func (p *Postgres) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
+func (p *Postgres) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, func(), error) {
 	if cfg.BackupAllDatabases {
 		return p.dumpAllCommand(ctx, cfg, mode, outputDir)
 	}
@@ -41,50 +41,53 @@ func (p *Postgres) DumpCommand(ctx context.Context, cfg *config.Config, mode str
 	case "directory":
 		args = append(args, "--format=directory", fmt.Sprintf("--file=%s", outputDir))
 	default:
-		return nil, fmt.Errorf("unsupported mode for postgres: %s", mode)
+		return nil, nil, fmt.Errorf("unsupported mode for postgres: %s", mode)
 	}
 
 	// Extra args
 	if cfg.DumpExtraArgs != "" {
-		args = append(args, shellSplit(cfg.DumpExtraArgs)...)
+		args = append(args, config.SplitArgs(cfg.DumpExtraArgs)...)
 	}
 
-	// Connection: prefer URI, otherwise set env vars for pg_dump
+	// Connection: prefer URI, otherwise libpq env vars
+	var env []string
 	if cfg.DBURI != "" {
 		if dbNameFromURI(cfg.DBURI) == "" {
-			return nil, fmt.Errorf("postgres URI has no database name; set DB_NAME, add a database to the URI, or use --all-databases")
+			return nil, nil, fmt.Errorf("postgres URI has no database name; set DB_NAME, add a database to the URI, or use --all-databases")
 		}
-		args = append(args, cfg.DBURI)
+		uri, pw := splitPassword(cfg.DBURI)
+		args = append(args, uri)
+		env = pgEnv(&config.Config{DBPassword: pw})
 	} else {
-		// pg_dump reads PGHOST, PGPORT, etc. from environment
-		if cfg.DBHost != "" {
-			os.Setenv("PGHOST", cfg.DBHost)
-		}
-		if cfg.DBPort != "" {
-			os.Setenv("PGPORT", cfg.DBPort)
-		}
-		if cfg.DBName != "" {
-			os.Setenv("PGDATABASE", cfg.DBName)
-		}
-		if cfg.DBUser != "" {
-			os.Setenv("PGUSER", cfg.DBUser)
-		}
-		if cfg.DBPassword != "" {
-			os.Setenv("PGPASSWORD", cfg.DBPassword)
-		}
+		env = pgEnv(cfg)
 		args = append(args, cfg.DBName)
 	}
 
 	cmd := proc.Command(ctx, "pg_dump", args...)
 	cmd.Stderr = os.Stderr
-	return cmd, nil
+	withEnv(cmd, env...)
+	return cmd, noCleanup, nil
+}
+
+// pgEnv maps the DB_* settings to libpq environment variables.
+func pgEnv(cfg *config.Config) []string {
+	var env []string
+	for k, v := range map[string]string{
+		"PGHOST": cfg.DBHost, "PGPORT": cfg.DBPort, "PGDATABASE": cfg.DBName,
+		"PGUSER": cfg.DBUser, "PGPASSWORD": cfg.DBPassword,
+	} {
+		if v != "" {
+			env = append(env, k+"="+v)
+		}
+	}
+	return env
 }
 
 // dumpAllCommand builds a pg_dumpall command. Only stream mode is supported
 // because pg_dumpall outputs plain SQL only (no custom/directory format).
-func (p *Postgres) dumpAllCommand(ctx context.Context, cfg *config.Config, mode string, outputFile string) (*exec.Cmd, error) {
+func (p *Postgres) dumpAllCommand(ctx context.Context, cfg *config.Config, mode string, outputFile string) (*exec.Cmd, func(), error) {
 	if mode != "stream" && mode != "file" {
-		return nil, fmt.Errorf("pg_dumpall only supports stream/file mode (got %q)", mode)
+		return nil, nil, fmt.Errorf("pg_dumpall only supports stream/file mode (got %q)", mode)
 	}
 	if cfg.BackupCompress {
 		logger.Log.Warn().Str("engine", "pg").Msg("pg_dumpall has no native compression; BACKUP_COMPRESS=true is a no-op")
@@ -94,26 +97,18 @@ func (p *Postgres) dumpAllCommand(ctx context.Context, cfg *config.Config, mode 
 
 	// Extra args
 	if cfg.DumpExtraArgs != "" {
-		args = append(args, shellSplit(cfg.DumpExtraArgs)...)
+		args = append(args, config.SplitArgs(cfg.DumpExtraArgs)...)
 	}
 
-	// Connection: prefer URI via -d, otherwise env vars
-	// Strip database name from URI — pg_dumpall uses it only for connection
+	// Connection: prefer URI via -d, otherwise libpq env vars.
+	// The database name is stripped; pg_dumpall uses it only to connect.
+	var env []string
 	if cfg.DBURI != "" {
-		args = append(args, "-d", stripDBFromURI(cfg.DBURI))
+		uri, pw := splitPassword(stripDBFromURI(cfg.DBURI))
+		args = append(args, "-d", uri)
+		env = pgEnv(&config.Config{DBPassword: pw})
 	} else {
-		if cfg.DBHost != "" {
-			os.Setenv("PGHOST", cfg.DBHost)
-		}
-		if cfg.DBPort != "" {
-			os.Setenv("PGPORT", cfg.DBPort)
-		}
-		if cfg.DBUser != "" {
-			os.Setenv("PGUSER", cfg.DBUser)
-		}
-		if cfg.DBPassword != "" {
-			os.Setenv("PGPASSWORD", cfg.DBPassword)
-		}
+		env = pgEnv(&config.Config{DBHost: cfg.DBHost, DBPort: cfg.DBPort, DBUser: cfg.DBUser, DBPassword: cfg.DBPassword})
 	}
 
 	if mode == "file" && outputFile != "" {
@@ -122,7 +117,8 @@ func (p *Postgres) dumpAllCommand(ctx context.Context, cfg *config.Config, mode 
 
 	cmd := proc.Command(ctx, "pg_dumpall", args...)
 	cmd.Stderr = os.Stderr
-	return cmd, nil
+	withEnv(cmd, env...)
+	return cmd, noCleanup, nil
 }
 
 // DefaultExtension returns the file extension based on compression.
