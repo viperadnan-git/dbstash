@@ -1,12 +1,14 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 
 	"github.com/viperadnan-git/dbstash/internal/config"
 	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // Postgres implements the Engine interface for PostgreSQL using pg_dump.
@@ -16,9 +18,9 @@ type Postgres struct{}
 func (p *Postgres) Name() string { return "pg" }
 
 // DumpCommand builds the pg_dump (or pg_dumpall) command for the given mode.
-func (p *Postgres) DumpCommand(cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
+func (p *Postgres) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
 	if cfg.BackupAllDatabases {
-		return p.dumpAllCommand(cfg, mode, outputDir)
+		return p.dumpAllCommand(ctx, cfg, mode, outputDir)
 	}
 
 	var args []string
@@ -73,14 +75,14 @@ func (p *Postgres) DumpCommand(cfg *config.Config, mode string, outputDir string
 		args = append(args, cfg.DBName)
 	}
 
-	cmd := exec.Command("pg_dump", args...)
+	cmd := proc.Command(ctx, "pg_dump", args...)
 	cmd.Stderr = os.Stderr
 	return cmd, nil
 }
 
 // dumpAllCommand builds a pg_dumpall command. Only stream mode is supported
 // because pg_dumpall outputs plain SQL only (no custom/directory format).
-func (p *Postgres) dumpAllCommand(cfg *config.Config, mode string, outputFile string) (*exec.Cmd, error) {
+func (p *Postgres) dumpAllCommand(ctx context.Context, cfg *config.Config, mode string, outputFile string) (*exec.Cmd, error) {
 	if mode != "stream" && mode != "file" {
 		return nil, fmt.Errorf("pg_dumpall only supports stream/file mode (got %q)", mode)
 	}
@@ -118,7 +120,7 @@ func (p *Postgres) dumpAllCommand(cfg *config.Config, mode string, outputFile st
 		args = append(args, fmt.Sprintf("--file=%s", outputFile))
 	}
 
-	cmd := exec.Command("pg_dumpall", args...)
+	cmd := proc.Command(ctx, "pg_dumpall", args...)
 	cmd.Stderr = os.Stderr
 	return cmd, nil
 }

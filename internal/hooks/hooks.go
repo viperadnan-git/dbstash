@@ -5,9 +5,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // RunPreBackup executes the pre-backup hook command via sh -c.
@@ -43,7 +43,7 @@ func RunPostBackup(ctx context.Context, command string, status string, remotePat
 }
 
 func runHook(ctx context.Context, command string, extraEnv []string) error {
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := proc.Command(ctx, "sh", "-c", command)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(), extraEnv...)

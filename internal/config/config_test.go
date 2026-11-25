@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -438,5 +439,129 @@ func TestLoad_BackupAllDatabases_WithURI(t *testing.T) {
 	}
 	if cfg.DBNameOrDefault() != "all" {
 		t.Errorf("expected DBNameOrDefault 'all', got %q", cfg.DBNameOrDefault())
+	}
+}
+
+const testRcloneConf = "[s3]\ntype = s3\n"
+
+// isolateTemp points os.CreateTemp at a fresh dir and returns a counter of
+// rclone temp configs left in it.
+func isolateTemp(t *testing.T) func() int {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	return func() int {
+		m, _ := filepath.Glob(filepath.Join(dir, "rclone-*.conf"))
+		return len(m)
+	}
+}
+
+func TestResolveRcloneConfig_Base64Cleanup(t *testing.T) {
+	leftover := isolateTemp(t)
+	path, cleanup, err := ResolveRcloneConfig("", base64.StdEncoding.EncodeToString([]byte(testRcloneConf)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != testRcloneConf {
+		t.Fatalf("temp config content = %q", got)
+	}
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+		t.Errorf("temp config mode = %v, want 0600", info.Mode().Perm())
+	}
+	cleanup()
+	cleanup()
+	if n := leftover(); n != 0 {
+		t.Fatalf("%d temp config(s) left after cleanup", n)
+	}
+}
+
+func TestResolveRcloneConfig_FilePathKept(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rclone.conf")
+	os.WriteFile(path, []byte(testRcloneConf), 0o600)
+	got, cleanup, err := ResolveRcloneConfig(path, "")
+	if err != nil || got != path {
+		t.Fatalf("got %q, %v; want %q", got, err, path)
+	}
+	cleanup()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("cleanup removed the caller's config: %v", err)
+	}
+}
+
+func TestLoad_CloseRemovesTempRcloneConfig(t *testing.T) {
+	clearEnv()
+	setMinimalEnv(t)
+	leftover := isolateTemp(t)
+	os.Setenv("RCLONE_CONFIG", base64.StdEncoding.EncodeToString([]byte(testRcloneConf)))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if leftover() != 1 {
+		t.Fatalf("expected the temp config to exist while the Config is open")
+	}
+	cfg.Close()
+	cfg.Close()
+	if n := leftover(); n != 0 {
+		t.Fatalf("%d temp config(s) left after Close", n)
+	}
+}
+
+func TestLoad_ErrorRemovesTempRcloneConfig(t *testing.T) {
+	for name, env := range map[string][2]string{
+		"validation": {"DB_HOST", ""},
+		"timeout":    {"BACKUP_TIMEOUT", "not-a-duration"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			clearEnv()
+			setMinimalEnv(t)
+			leftover := isolateTemp(t)
+			os.Setenv("RCLONE_CONFIG", base64.StdEncoding.EncodeToString([]byte(testRcloneConf)))
+			os.Setenv(env[0], env[1])
+
+			if _, err := Load(); err == nil {
+				t.Fatal("expected error")
+			}
+			if n := leftover(); n != 0 {
+				t.Fatalf("%d temp config(s) left after a failed Load", n)
+			}
+		})
+	}
+}
+
+func TestConfigClose_NilAndNoCleanup(t *testing.T) {
+	var nilCfg *Config
+	nilCfg.Close()
+	(&Config{}).Close()
+}
+
+func TestResolveRcloneConfig_InvalidBase64(t *testing.T) {
+	leftover := isolateTemp(t)
+	// A valid default config must not be used as a silent fallback.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	os.MkdirAll(filepath.Join(home, ".config", "rclone"), 0o700)
+	os.WriteFile(filepath.Join(home, ".config", "rclone", "rclone.conf"), []byte(testRcloneConf), 0o600)
+
+	if _, _, err := ResolveRcloneConfig("", "not base64!"); err == nil {
+		t.Fatal("expected an error for invalid base64")
+	}
+	if n := leftover(); n != 0 {
+		t.Fatalf("%d temp config(s) left", n)
+	}
+}
+
+func TestResolveRcloneConfig_WrappedBase64(t *testing.T) {
+	isolateTemp(t)
+	enc := base64.StdEncoding.EncodeToString([]byte(testRcloneConf))
+	wrapped := enc[:8] + "\n" + enc[8:] + "\n" // GNU base64 wraps at 76 columns
+	path, cleanup, err := ResolveRcloneConfig("", wrapped)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer cleanup()
+	if got, _ := os.ReadFile(path); string(got) != testRcloneConf {
+		t.Fatalf("temp config content = %q", got)
 	}
 }

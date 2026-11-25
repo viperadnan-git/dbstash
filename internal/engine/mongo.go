@@ -1,11 +1,13 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 
 	"github.com/viperadnan-git/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // Mongo implements the Engine interface for MongoDB using mongodump.
@@ -15,7 +17,7 @@ type Mongo struct{}
 func (m *Mongo) Name() string { return "mongo" }
 
 // DumpCommand builds the mongodump command for the given mode.
-func (m *Mongo) DumpCommand(cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
+func (m *Mongo) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
 	var args []string
 
 	switch mode {
@@ -77,7 +79,7 @@ func (m *Mongo) DumpCommand(cfg *config.Config, mode string, outputDir string) (
 		args = append(args, shellSplit(cfg.DumpExtraArgs)...)
 	}
 
-	cmd := exec.Command("mongodump", args...)
+	cmd := proc.Command(ctx, "mongodump", args...)
 	cmd.Stderr = os.Stderr
 	return cmd, nil
 }

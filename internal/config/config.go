@@ -69,6 +69,25 @@ type Config struct {
 
 	// ScheduleOnce indicates BACKUP_SCHEDULE=once
 	ScheduleOnce bool
+
+	// cleanup removes the temp rclone config written from RCLONE_CONFIG.
+	cleanup func()
+}
+
+// Close removes the temp rclone config file written from RCLONE_CONFIG, if
+// any. It is safe to call more than once and on a nil Config.
+func (c *Config) Close() {
+	if c != nil && c.cleanup != nil {
+		c.cleanup()
+		c.cleanup = nil
+	}
+}
+
+// SetRcloneConfig records the resolved rclone config path and the cleanup
+// that Close will run.
+func (c *Config) SetRcloneConfig(path string, cleanup func()) {
+	c.RcloneConfigFile = path
+	c.cleanup = cleanup
 }
 
 // Prepare validates all fields and sets derived values (ScheduleOnce,
@@ -131,9 +150,14 @@ func (c *Config) Prepare() error {
 
 // Load reads environment variables, resolves _FILE variants, and returns
 // a validated Config. It returns an error if required variables are missing
-// or values are invalid.
-func Load() (*Config, error) {
+// or values are invalid. The caller must Close the returned Config.
+func Load() (_ *Config, err error) {
 	cfg := &Config{}
+	defer func() {
+		if err != nil {
+			cfg.Close()
+		}
+	}()
 
 	// Connection — resolve _FILE variants first
 	cfg.Engine = envOrDefault("ENGINE", "")
@@ -147,14 +171,14 @@ func Load() (*Config, error) {
 
 	// Rclone
 	cfg.RcloneRemote = envOrDefault("RCLONE_REMOTE", "")
-	rcloneConfigFile, err := ResolveRcloneConfig(
+	rcloneConfigFile, cleanup, err := ResolveRcloneConfig(
 		os.Getenv("RCLONE_CONFIG_FILE"),
 		os.Getenv("RCLONE_CONFIG"),
 	)
 	if err != nil {
 		return nil, err
 	}
-	cfg.RcloneConfigFile = rcloneConfigFile
+	cfg.SetRcloneConfig(rcloneConfigFile, cleanup)
 	cfg.RcloneExtraArgs = envOrDefault("RCLONE_EXTRA_ARGS", "")
 
 	// Schedule & Naming
@@ -207,18 +231,16 @@ func Load() (*Config, error) {
 
 // ResolveRcloneConfig resolves the rclone config from a file path or
 // base64-encoded content. It validates that the resolved config file exists.
-func ResolveRcloneConfig(configFilePath, base64Config string) (string, error) {
+// The returned cleanup removes the temp file written for base64 content and
+// is a no-op for a caller-supplied path; it is never nil when err is nil.
+func ResolveRcloneConfig(configFilePath, base64Config string) (string, func(), error) {
 	// Check base64-encoded config first
 	if base64Config != "" {
 		decoded, err := base64.StdEncoding.DecodeString(base64Config)
-		if err == nil {
-			tmpFile, err := os.CreateTemp("", "rclone-*.conf")
-			if err == nil {
-				tmpFile.Write(decoded)
-				tmpFile.Close()
-				return tmpFile.Name(), nil
-			}
+		if err != nil {
+			return "", nil, fmt.Errorf("RCLONE_CONFIG is not valid base64: %w", err)
 		}
+		return writeTempRcloneConfig(decoded)
 	}
 
 	if configFilePath == "" {
@@ -232,12 +254,32 @@ func ResolveRcloneConfig(configFilePath, base64Config string) (string, error) {
 	// Validate that the config file exists
 	if _, err := os.Stat(configFilePath); err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("rclone config file not found at %q. Please set RCLONE_CONFIG_FILE to a valid path", configFilePath)
+			return "", nil, fmt.Errorf("rclone config file not found at %q. Please set RCLONE_CONFIG_FILE to a valid path", configFilePath)
 		}
-		return "", fmt.Errorf("cannot access rclone config file at %q: %w", configFilePath, err)
+		return "", nil, fmt.Errorf("cannot access rclone config file at %q: %w", configFilePath, err)
 	}
 
-	return configFilePath, nil
+	return configFilePath, func() {}, nil
+}
+
+// writeTempRcloneConfig writes data to a private temp file; a partial file is
+// removed on failure.
+func writeTempRcloneConfig(data []byte) (string, func(), error) {
+	f, err := os.CreateTemp("", "rclone-*.conf")
+	if err != nil {
+		return "", nil, fmt.Errorf("cannot create temp rclone config: %w", err)
+	}
+	cleanup := func() { os.Remove(f.Name()) }
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		cleanup()
+		return "", nil, fmt.Errorf("cannot write temp rclone config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("cannot write temp rclone config: %w", err)
+	}
+	return f.Name(), cleanup, nil
 }
 
 // ResolveFileValue reads a secret from a file path, trimming whitespace.

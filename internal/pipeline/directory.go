@@ -5,12 +5,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/viperadnan-git/dbstash/internal/config"
 	"github.com/viperadnan-git/dbstash/internal/engine"
 	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // DirectoryPipeline dumps to a temp directory then uploads via rclone copy.
@@ -37,7 +37,7 @@ func (p *DirectoryPipeline) Execute(ctx context.Context, eng engine.Engine, cfg 
 	defer os.RemoveAll(tempDir)
 
 	// Run dump to temp dir
-	dumpCmd, err := eng.DumpCommand(cfg, "directory", tempDir)
+	dumpCmd, err := eng.DumpCommand(ctx, cfg, "directory", tempDir)
 	if err != nil {
 		return "", 0, fmt.Errorf("building dump command: %w", err)
 	}
@@ -52,12 +52,14 @@ func (p *DirectoryPipeline) Execute(ctx context.Context, eng engine.Engine, cfg 
 	// Upload via rclone copy
 	rcloneArgs := []string{"copy", tempDir, remotePath}
 	rcloneArgs = append(rcloneArgs, rcloneConfigArgs(cfg)...)
-	rcloneCmd := exec.CommandContext(ctx, "rclone", rcloneArgs...)
+	rcloneCmd := proc.Command(ctx, "rclone", rcloneArgs...)
 	var rcloneStderr bytes.Buffer
 	rcloneCmd.Stderr = &rcloneStderr
 
 	log.Debug().Str("cmd", rcloneCmd.String()).Msg("running rclone copy")
 	if err := rcloneCmd.Run(); err != nil {
+		// rclone removes only the file it was writing; drop the files it finished.
+		cleanupRemote(ctx, "purge", remotePath, cfg)
 		return "", 0, fmt.Errorf("rclone copy failed: %w (stderr: %s)", err, rcloneStderr.String())
 	}
 

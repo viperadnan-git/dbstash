@@ -1,12 +1,14 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 
 	"github.com/viperadnan-git/dbstash/internal/config"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // Redis implements the Engine interface for Redis using redis-cli --rdb.
@@ -16,7 +18,7 @@ type Redis struct{}
 func (r *Redis) Name() string { return "redis" }
 
 // DumpCommand builds the redis-cli command. Only stream mode is supported.
-func (r *Redis) DumpCommand(cfg *config.Config, mode string, _ string) (*exec.Cmd, error) {
+func (r *Redis) DumpCommand(ctx context.Context, cfg *config.Config, mode string, _ string) (*exec.Cmd, error) {
 	if mode != "stream" && mode != "file" {
 		return nil, fmt.Errorf("redis only supports stream/file mode (got %q)", mode)
 	}
@@ -42,7 +44,7 @@ func (r *Redis) DumpCommand(cfg *config.Config, mode string, _ string) (*exec.Cm
 		args = append(args, shellSplit(cfg.DumpExtraArgs)...)
 	}
 
-	cmd := exec.Command("redis-cli", args...)
+	cmd := proc.Command(ctx, "redis-cli", args...)
 	cmd.Stderr = os.Stderr
 	return cmd, nil
 }

@@ -3,6 +3,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os/exec"
@@ -19,7 +20,8 @@ type Engine interface {
 	// DumpCommand returns the exec.Cmd for the dump tool.
 	// For stream mode, the command writes to stdout.
 	// For directory mode, it writes to the provided outputDir.
-	DumpCommand(cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error)
+	// The command is killed when ctx is done.
+	DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error)
 
 	// DefaultExtension returns the file extension based on compression setting.
 	DefaultExtension(compressed bool) string

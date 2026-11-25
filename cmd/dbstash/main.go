@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -20,6 +21,9 @@ import (
 
 var version = "dev"
 
+// errLogged marks a failure that run already logged; main only sets the exit code.
+var errLogged = errors.New("failure already logged")
+
 func main() {
 	app := &cli.Command{
 		Name:    "dbstash",
@@ -31,7 +35,8 @@ func main() {
 			if err != nil {
 				return fmt.Errorf("configuration error: %s", err)
 			}
-			return run(cfg)
+			defer cfg.Close()
+			return run(ctx, cfg)
 		},
 		Commands: []*cli.Command{
 			engineCommand("pg", "PostgreSQL backup"),
@@ -43,7 +48,9 @@ func main() {
 	}
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
+		if !errors.Is(err, errLogged) {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -69,7 +76,8 @@ func engineCommand(engineKey, usage string) *cli.Command {
 			if err != nil {
 				return fmt.Errorf("configuration error: %s", err)
 			}
-			return run(cfg)
+			defer cfg.Close()
+			return run(ctx, cfg)
 		},
 	}
 }
@@ -270,8 +278,14 @@ func commonFlags() []cli.Flag {
 }
 
 // configFromCLI builds a Config from parsed CLI flags with env var fallback.
-func configFromCLI(engineKey string, cmd *cli.Command) (*config.Config, error) {
+// The caller must Close the returned Config.
+func configFromCLI(engineKey string, cmd *cli.Command) (_ *config.Config, err error) {
 	cfg := &config.Config{}
+	defer func() {
+		if err != nil {
+			cfg.Close()
+		}
+	}()
 	cfg.Engine = engineKey
 
 	// Connection — resolve _FILE variants
@@ -296,14 +310,14 @@ func configFromCLI(engineKey string, cmd *cli.Command) (*config.Config, error) {
 	cfg.RcloneRemote = cmd.String("rclone-remote")
 	cfg.RcloneExtraArgs = cmd.String("rclone-extra-args")
 
-	rcloneConfigFile, err := config.ResolveRcloneConfig(
+	rcloneConfigFile, cleanup, err := config.ResolveRcloneConfig(
 		cmd.String("rclone-config-file"),
 		cmd.String("rclone-config"),
 	)
 	if err != nil {
 		return nil, err
 	}
-	cfg.RcloneConfigFile = rcloneConfigFile
+	cfg.SetRcloneConfig(rcloneConfigFile, cleanup)
 
 	// Schedule & Backup
 	cfg.BackupSchedule = cmd.String("backup-schedule")
@@ -354,8 +368,9 @@ func configFromCLI(engineKey string, cmd *cli.Command) (*config.Config, error) {
 	return cfg, nil
 }
 
-// run executes the backup workflow with a validated Config.
-func run(cfg *config.Config) error {
+// run executes the backup workflow with a validated Config. It returns instead
+// of exiting so the caller's deferred cleanup runs.
+func run(ctx context.Context, cfg *config.Config) error {
 	// Initialize logger
 	logger.Init(cfg.LogLevel, cfg.LogFormat)
 	log := logger.With(cfg.Engine, cfg.DBNameOrDefault(), "")
@@ -374,7 +389,8 @@ func run(cfg *config.Config) error {
 	// Initialize engine
 	eng, err := engine.New(cfg.Engine)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialize engine")
+		log.Error().Err(err).Msg("failed to initialize engine")
+		return errLogged
 	}
 
 	// Check for conflicting DUMP_EXTRA_ARGS
@@ -390,7 +406,8 @@ func run(cfg *config.Config) error {
 	// Initialize pipeline
 	pipe, err := pipeline.New(cfg.BackupMode)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialize pipeline")
+		log.Error().Err(err).Msg("failed to initialize pipeline")
+		return errLogged
 	}
 
 	// Dry run mode
@@ -401,10 +418,13 @@ func run(cfg *config.Config) error {
 
 	// One-time backup mode
 	if cfg.ScheduleOnce {
+		// SIGINT/SIGTERM cancel the run so it returns and cleanup still happens.
+		ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
 		log.Info().Msg("running one-time backup")
-		if err := scheduler.RunOnce(context.Background(), cfg, eng, pipe, nil); err != nil {
+		if err := scheduler.RunOnce(ctx, cfg, eng, pipe, nil); err != nil {
 			log.Error().Err(err).Msg("one-time backup failed")
-			os.Exit(1)
+			return errLogged
 		}
 		return nil
 	}
@@ -416,16 +436,17 @@ func run(cfg *config.Config) error {
 	healthServer := health.StartServer(":8080", tracker)
 	defer healthServer.Close()
 
-	// Run backup on start if configured
-	if cfg.BackupOnStart {
-		log.Info().Msg("running backup on start")
-		go scheduler.RunOnce(context.Background(), cfg, eng, pipe, tracker)
-	}
-
 	// Start cron scheduler
 	sched := scheduler.New(cfg, eng, pipe, tracker)
 	if err := sched.Start(); err != nil {
-		log.Fatal().Err(err).Msg("failed to start scheduler")
+		log.Error().Err(err).Msg("failed to start scheduler")
+		return errLogged
+	}
+
+	// Run backup on start if configured
+	if cfg.BackupOnStart {
+		log.Info().Msg("running backup on start")
+		sched.RunNow()
 	}
 
 	// Wait for shutdown signal
@@ -463,7 +484,7 @@ func dryRun(cfg *config.Config, eng engine.Engine) {
 	}
 
 	// Build a sample dump command
-	cmd, err := eng.DumpCommand(cfg, cfg.BackupMode, "/tmp/dbstash-dry-run")
+	cmd, err := eng.DumpCommand(context.Background(), cfg, cfg.BackupMode, "/tmp/dbstash-dry-run")
 	if err != nil {
 		log.Warn().Err(err).Msg("could not build dump command for dry run")
 	} else {

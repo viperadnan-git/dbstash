@@ -16,6 +16,7 @@ import (
 	"github.com/viperadnan-git/dbstash/internal/config"
 	"github.com/viperadnan-git/dbstash/internal/engine"
 	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // Pipeline defines the interface for backup execution strategies.
@@ -128,17 +129,47 @@ func resolveDirname(template string, cfg *config.Config, eng engine.Engine) stri
 	return name
 }
 
-// cleanupRemoteFile removes a partially uploaded file from the remote on failure.
-func cleanupRemoteFile(ctx context.Context, remotePath string, cfg *config.Config) {
-	args := []string{"deletefile", remotePath}
+// runPiped runs src | dst through an OS pipe and returns each command's exit
+// error, or startErr if either failed to start. With no copying goroutine in
+// between, when one side exits or is killed the other sees EOF or EPIPE
+// instead of Wait blocking forever.
+func runPiped(src, dst *exec.Cmd) (srcErr, dstErr, startErr error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating pipe: %w", err)
+	}
+	src.Stdout, dst.Stdin = w, r
+	if err := dst.Start(); err != nil {
+		r.Close()
+		w.Close()
+		return nil, nil, fmt.Errorf("starting %s: %w", dst.Args[0], err)
+	}
+	r.Close() // dst holds its own copy; without ours src gets EPIPE if dst dies
+	if err := src.Start(); err != nil {
+		w.Close()
+		dst.Wait()
+		return nil, nil, fmt.Errorf("starting %s: %w", src.Args[0], err)
+	}
+	w.Close() // src holds its own copy; dst sees EOF when src exits
+	return src.Wait(), dst.Wait(), nil
+}
+
+// cleanupRemote removes a partial upload from the remote on failure, using
+// rclone `deletefile` for a file or `purge` for a directory. It runs even when
+// ctx is already cancelled (signal or timeout), which is usually why the upload
+// failed.
+func cleanupRemote(ctx context.Context, rcloneCmd, remotePath string, cfg *config.Config) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	args := []string{rcloneCmd, remotePath}
 	args = append(args, rcloneConfigArgs(cfg)...)
-	cmd := exec.CommandContext(ctx, "rclone", args...)
+	cmd := proc.Command(ctx, "rclone", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		logger.Log.Warn().Err(err).Str("path", remotePath).Msg("failed to clean up remote file after error")
+		logger.Log.Warn().Err(err).Str("path", remotePath).Msg("failed to clean up remote after error")
 	} else {
-		logger.Log.Debug().Str("path", remotePath).Msg("cleaned up remote file after error")
+		logger.Log.Debug().Str("path", remotePath).Msg("cleaned up remote after error")
 	}
 }
 

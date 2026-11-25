@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/viperadnan-git/dbstash/internal/config"
 	"github.com/viperadnan-git/dbstash/internal/engine"
 	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // TarPipeline dumps to a temp directory, then streams tar output to rclone rcat.
@@ -41,7 +41,7 @@ func (p *TarPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *confi
 	defer os.RemoveAll(tempDir)
 
 	// Run dump to temp dir
-	dumpCmd, err := eng.DumpCommand(cfg, "directory", tempDir)
+	dumpCmd, err := eng.DumpCommand(ctx, cfg, "directory", tempDir)
 	if err != nil {
 		return "", 0, fmt.Errorf("building dump command: %w", err)
 	}
@@ -56,41 +56,30 @@ func (p *TarPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *confi
 	// Pipe: tar → rclone rcat (with gzip if compression is enabled)
 	var tarCmd *exec.Cmd
 	if cfg.BackupCompress {
-		tarCmd = exec.CommandContext(ctx, "tar", "czf", "-", "-C", tempDir, ".")
+		tarCmd = proc.Command(ctx, "tar", "czf", "-", "-C", tempDir, ".")
 	} else {
-		tarCmd = exec.CommandContext(ctx, "tar", "cf", "-", "-C", tempDir, ".")
+		tarCmd = proc.Command(ctx, "tar", "cf", "-", "-C", tempDir, ".")
 	}
 	rcloneArgs := []string{"rcat", remotePath}
 	rcloneArgs = append(rcloneArgs, rcloneConfigArgs(cfg)...)
-	rcloneCmd := exec.CommandContext(ctx, "rclone", rcloneArgs...)
+	rcloneCmd := proc.Command(ctx, "rclone", rcloneArgs...)
 
-	pr, pw := io.Pipe()
-	tarCmd.Stdout = pw
 	var tarStderr bytes.Buffer
 	tarCmd.Stderr = &tarStderr
-
-	rcloneCmd.Stdin = pr
 	var rcloneStderr bytes.Buffer
 	rcloneCmd.Stderr = &rcloneStderr
 
-	if err := rcloneCmd.Start(); err != nil {
-		return "", 0, fmt.Errorf("starting rclone: %w", err)
-	}
-	if err := tarCmd.Start(); err != nil {
-		pw.Close()
-		rcloneCmd.Wait()
-		return "", 0, fmt.Errorf("starting tar: %w", err)
+	tarErr, rcloneErr, err := runPiped(tarCmd, rcloneCmd)
+	if err != nil {
+		return "", 0, err
 	}
 
-	tarErr := tarCmd.Wait()
-	pw.Close()
-
-	rcloneErr := rcloneCmd.Wait()
-	pr.Close()
-
+	// rclone rcat keeps whatever it received, so drop it whichever side failed.
+	if tarErr != nil || rcloneErr != nil {
+		log.Debug().Str("remote_path", remotePath).Msg("backup failed, cleaning up remote file")
+		cleanupRemote(ctx, "deletefile", remotePath, cfg)
+	}
 	if tarErr != nil {
-		log.Debug().Str("remote_path", remotePath).Msg("tar failed, cleaning up remote file")
-		cleanupRemoteFile(ctx, remotePath, cfg)
 		return "", 0, fmt.Errorf("tar failed: %w (stderr: %s)", tarErr, tarStderr.String())
 	}
 	if rcloneErr != nil {

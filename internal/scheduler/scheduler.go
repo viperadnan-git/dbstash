@@ -32,16 +32,34 @@ type Scheduler struct {
 	tracker *health.Tracker
 	running atomic.Bool
 	mu      sync.Mutex
+
+	// ctx is cancelled by Stop so in-progress backups abort and clean up.
+	ctx    context.Context
+	cancel context.CancelFunc
+	extra  sync.WaitGroup // RunNow runs, which cron's Stop does not track
 }
 
 // New creates a new Scheduler.
 func New(cfg *config.Config, eng engine.Engine, pipe pipeline.Pipeline, tracker *health.Tracker) *Scheduler {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Scheduler{
 		cfg:     cfg,
 		eng:     eng,
 		pipe:    pipe,
 		tracker: tracker,
+		ctx:     ctx,
+		cancel:  cancel,
 	}
+}
+
+// RunNow starts a backup in the background, subject to the same lock as cron
+// runs; Stop cancels and waits for it.
+func (s *Scheduler) RunNow() {
+	s.extra.Add(1)
+	go func() {
+		defer s.extra.Done()
+		s.runWithLock()
+	}()
 }
 
 // Start begins the cron scheduler.
@@ -60,18 +78,22 @@ func (s *Scheduler) Start() error {
 	return nil
 }
 
-// Stop gracefully stops the cron scheduler and waits for any in-progress
-// backup to complete.
+// Stop stops the cron scheduler, cancels any in-progress backup so it aborts
+// and cleans up, and waits up to timeout for it to return.
 func (s *Scheduler) Stop(timeout time.Duration) {
-	if s.cron != nil {
-		ctx := s.cron.Stop()
-
-		// Wait for in-progress backup or timeout
-		select {
-		case <-ctx.Done():
-		case <-time.After(timeout):
-			logger.Log.Warn().Msg("timeout waiting for in-progress backup to finish")
+	s.cancel()
+	done := make(chan struct{})
+	go func() {
+		if s.cron != nil {
+			<-s.cron.Stop().Done()
 		}
+		s.extra.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		logger.Log.Warn().Msg("timeout waiting for in-progress backup to finish")
 	}
 }
 
@@ -84,7 +106,7 @@ func (s *Scheduler) runWithLock() {
 		defer s.running.Store(false)
 	}
 
-	RunOnce(context.Background(), s.cfg, s.eng, s.pipe, s.tracker)
+	RunOnce(s.ctx, s.cfg, s.eng, s.pipe, s.tracker)
 }
 
 // RunOnce executes a single backup run with full orchestration:

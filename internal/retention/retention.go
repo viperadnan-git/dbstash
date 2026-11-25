@@ -7,13 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/viperadnan-git/dbstash/internal/config"
 	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // RemoteEntry represents a single item returned by rclone lsjson.
@@ -123,7 +123,7 @@ func listRemote(ctx context.Context, cfg *config.Config) ([]RemoteEntry, error) 
 		args = append(args, "--config", cfg.RcloneConfigFile)
 	}
 
-	cmd := exec.CommandContext(ctx, "rclone", args...)
+	cmd := proc.Command(ctx, "rclone", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -154,7 +154,7 @@ func deleteEntry(ctx context.Context, cfg *config.Config, entry RemoteEntry) err
 		args = append(args, "--config", cfg.RcloneConfigFile)
 	}
 
-	cmd := exec.CommandContext(ctx, "rclone", args...)
+	cmd := proc.Command(ctx, "rclone", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 

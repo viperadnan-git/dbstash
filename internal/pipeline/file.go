@@ -5,13 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/viperadnan-git/dbstash/internal/config"
 	"github.com/viperadnan-git/dbstash/internal/engine"
 	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // FilePipeline dumps to a temp file then uploads via rclone copy.
@@ -43,7 +43,7 @@ func (p *FilePipeline) Execute(ctx context.Context, eng engine.Engine, cfg *conf
 	// Build dump command — engines that support direct file output (mongo, pg)
 	// write to tempFilePath natively; others (mysql, redis) write to stdout
 	// which is redirected to tempFilePath via cmd.Stdout below.
-	dumpCmd, err := eng.DumpCommand(cfg, "file", tempFilePath)
+	dumpCmd, err := eng.DumpCommand(ctx, cfg, "file", tempFilePath)
 	if err != nil {
 		return "", 0, fmt.Errorf("building dump command: %w", err)
 	}
@@ -69,7 +69,7 @@ func (p *FilePipeline) Execute(ctx context.Context, eng engine.Engine, cfg *conf
 	// Upload via rclone copy — runs after dump is fully complete
 	rcloneArgs := []string{"copy", tempDir, remoteDir}
 	rcloneArgs = append(rcloneArgs, rcloneConfigArgs(cfg)...)
-	rcloneCmd := exec.CommandContext(ctx, "rclone", rcloneArgs...)
+	rcloneCmd := proc.Command(ctx, "rclone", rcloneArgs...)
 	var rcloneStderr bytes.Buffer
 	rcloneCmd.Stderr = &rcloneStderr
 

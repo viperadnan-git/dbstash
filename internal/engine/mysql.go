@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/viperadnan-git/dbstash/internal/config"
 	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // MySQL implements the Engine interface for MySQL and MariaDB using mysqldump.
@@ -20,7 +22,7 @@ type MySQL struct {
 func (m *MySQL) Name() string { return m.engineKey }
 
 // DumpCommand builds the mysqldump command for the given mode.
-func (m *MySQL) DumpCommand(cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
+func (m *MySQL) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputDir string) (*exec.Cmd, error) {
 	var args []string
 
 	// Resolve connection params — mysqldump doesn't accept URIs directly
@@ -69,7 +71,7 @@ func (m *MySQL) DumpCommand(cfg *config.Config, mode string, outputDir string) (
 		return nil, fmt.Errorf("no database name found; set DB_NAME, add a database to the URI, or use --all-databases")
 	}
 
-	cmd := exec.Command("mysqldump", args...)
+	cmd := proc.Command(ctx, "mysqldump", args...)
 	cmd.Stderr = os.Stderr
 	return cmd, nil
 }

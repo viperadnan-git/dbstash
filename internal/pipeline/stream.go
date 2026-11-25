@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/viperadnan-git/dbstash/internal/config"
 	"github.com/viperadnan-git/dbstash/internal/engine"
 	"github.com/viperadnan-git/dbstash/internal/logger"
+	"github.com/viperadnan-git/dbstash/internal/proc"
 )
 
 // StreamPipeline pipes dump stdout directly into rclone rcat.
@@ -26,7 +25,7 @@ func (p *StreamPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *co
 	log.Debug().Msg("starting stream pipeline")
 
 	// Build dump command
-	dumpCmd, err := eng.DumpCommand(cfg, "stream", "")
+	dumpCmd, err := eng.DumpCommand(ctx, cfg, "stream", "")
 	if err != nil {
 		return "", 0, fmt.Errorf("building dump command: %w", err)
 	}
@@ -34,13 +33,8 @@ func (p *StreamPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *co
 	// Build rclone command
 	rcloneArgs := []string{"rcat", remotePath}
 	rcloneArgs = append(rcloneArgs, rcloneConfigArgs(cfg)...)
-	rcloneCmd := exec.CommandContext(ctx, "rclone", rcloneArgs...)
+	rcloneCmd := proc.Command(ctx, "rclone", rcloneArgs...)
 
-	// Pipe dump stdout → rclone stdin
-	pr, pw := io.Pipe()
-	dumpCmd.Stdout = pw
-
-	rcloneCmd.Stdin = pr
 	var rcloneStderr bytes.Buffer
 	rcloneCmd.Stderr = &rcloneStderr
 
@@ -50,35 +44,19 @@ func (p *StreamPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *co
 	log.Debug().Str("dump_cmd", config.MaskCmdArgs(dumpCmd.Args)).Msg("executing dump command")
 	log.Debug().Strs("rclone_args", rcloneArgs).Msg("executing rclone command")
 
-	// Start rclone first, then dump
-	log.Debug().Msg("starting rclone process")
-	if err := rcloneCmd.Start(); err != nil {
-		return "", 0, fmt.Errorf("starting rclone: %w", err)
+	// Pipe dump stdout → rclone stdin
+	dumpErr, rcloneErr, err := runPiped(dumpCmd, rcloneCmd)
+	if err != nil {
+		return "", 0, err
 	}
+	log.Debug().AnErr("dump_err", dumpErr).AnErr("rclone_err", rcloneErr).Msg("dump and rclone finished")
 
-	log.Debug().Msg("starting dump process")
-	if err := dumpCmd.Start(); err != nil {
-		pw.Close()
-		rcloneCmd.Wait()
-		return "", 0, fmt.Errorf("starting dump: %w", err)
+	// rclone rcat keeps whatever it received, so drop it whichever side failed.
+	if dumpErr != nil || rcloneErr != nil {
+		log.Debug().Str("remote_path", remotePath).Msg("backup failed, cleaning up remote file")
+		cleanupRemote(ctx, "deletefile", remotePath, cfg)
 	}
-
-	log.Debug().Msg("waiting for dump to complete")
-
-	// Wait for dump to finish, then close the pipe
-	dumpErr := dumpCmd.Wait()
-	log.Debug().Err(dumpErr).Msg("dump process finished")
-	pw.Close()
-
-	// Wait for rclone to finish
-	log.Debug().Msg("waiting for rclone to complete")
-	rcloneErr := rcloneCmd.Wait()
-	log.Debug().Err(rcloneErr).Msg("rclone process finished")
-	pr.Close()
-
 	if dumpErr != nil {
-		log.Debug().Str("remote_path", remotePath).Msg("dump failed, cleaning up remote file")
-		cleanupRemoteFile(ctx, remotePath, cfg)
 		return "", 0, fmt.Errorf("dump failed: %w (stderr: %s)", dumpErr, dumpStderr.String())
 	}
 	if rcloneErr != nil {
@@ -96,7 +74,7 @@ func (p *StreamPipeline) Execute(ctx context.Context, eng engine.Engine, cfg *co
 func getRemoteFileSize(ctx context.Context, remotePath string, cfg *config.Config) int64 {
 	args := []string{"size", remotePath, "--json"}
 	args = append(args, rcloneConfigArgs(cfg)...)
-	cmd := exec.CommandContext(ctx, "rclone", args...)
+	cmd := proc.Command(ctx, "rclone", args...)
 
 	output, err := cmd.Output()
 	if err != nil {
