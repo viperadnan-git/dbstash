@@ -159,8 +159,7 @@ func commonFlags() []cli.Flag {
 		},
 		&cli.StringFlag{
 			Name:    "backup-mode",
-			Usage:   "Backup mode: stream, directory, or tar",
-			Value:   "stream",
+			Usage:   "Backup mode: stream, file, directory, or tar (default: stream; file for redis)",
 			Sources: cli.EnvVars("BACKUP_MODE"),
 		},
 		&cli.StringFlag{

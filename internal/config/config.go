@@ -145,11 +145,21 @@ func (c *Config) Prepare() error {
 		}
 	}
 
-	// Backup mode
+	// Backup mode: stream, except redis, whose redis-cli can only drop the
+	// diskless-sync EOF marker from a real file.
 	c.BackupMode = strings.ToLower(c.BackupMode)
+	if c.BackupMode == "" {
+		c.BackupMode = "stream"
+		if c.Engine == "redis" {
+			c.BackupMode = "file"
+		}
+	}
 	validModes := map[string]bool{"stream": true, "directory": true, "tar": true, "file": true}
 	if !validModes[c.BackupMode] {
 		return fmt.Errorf("invalid BACKUP_MODE %q (valid: stream, directory, tar, file)", c.BackupMode)
+	}
+	if c.Engine == "redis" && c.BackupMode != "file" {
+		return fmt.Errorf("redis only supports BACKUP_MODE=file (got %q)", c.BackupMode)
 	}
 
 	// Notifications
@@ -197,7 +207,7 @@ func Load() (_ *Config, err error) {
 
 	// Schedule & Naming
 	cfg.BackupSchedule = envOrDefault("BACKUP_SCHEDULE", "0 2 * * *")
-	cfg.BackupMode = envOrDefault("BACKUP_MODE", "stream")
+	cfg.BackupMode = os.Getenv("BACKUP_MODE")
 	cfg.BackupNameTemplate = envOrDefault("BACKUP_NAME_TEMPLATE", "{db}-{timestamp}")
 	cfg.BackupCompress = strings.EqualFold(envOrDefault("BACKUP_COMPRESS", "false"), "true")
 	cfg.BackupExtension = envOrDefault("BACKUP_EXTENSION", "")

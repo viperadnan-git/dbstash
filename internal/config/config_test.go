@@ -92,6 +92,13 @@ func TestLoad_Valid(t *testing.T) {
 				t.Errorf("DBURI = %q", c.DBURI)
 			}
 		}},
+		{"redis defaults to file mode", func(*testing.T) map[string]string {
+			return map[string]string{"ENGINE": "redis"}
+		}, func(t *testing.T, c *Config) {
+			if c.BackupMode != "file" {
+				t.Errorf("BackupMode = %q, want file", c.BackupMode)
+			}
+		}},
 		{"DB_URI_FILE is read and trimmed", func(t *testing.T) map[string]string {
 			return map[string]string{"DB_HOST": "", "DB_NAME": "", "DB_URI_FILE": writeFile(t, "postgresql://h/prod\n")}
 		}, func(t *testing.T, c *Config) {
@@ -163,6 +170,7 @@ func TestLoad_Invalid(t *testing.T) {
 		wantErr string
 	}{
 		{"missing engine", map[string]string{"ENGINE": ""}, "ENGINE is required"},
+		{"redis stream", map[string]string{"ENGINE": "redis", "BACKUP_MODE": "stream"}, "redis only supports BACKUP_MODE=file"},
 		{"unsupported engine", map[string]string{"ENGINE": "oracle"}, "unsupported ENGINE"},
 		{"missing connection", map[string]string{"DB_HOST": "", "DB_NAME": ""}, "either DB_URI"},
 		{"missing remote", map[string]string{"RCLONE_REMOTE": ""}, "RCLONE_REMOTE is required"},

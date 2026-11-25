@@ -127,13 +127,17 @@ func TestDumpCommand(t *testing.T) {
 			cfg: config.Config{DBHost: "h"}, wantErr: "no database name",
 		},
 		{
-			name: "redis stream", engine: "redis", mode: "stream",
+			name: "redis rejects stream", engine: "redis", mode: "stream",
+			cfg: config.Config{DBURI: "redis://h:6379"}, wantErr: "only supports file mode",
+		},
+		{
+			name: "redis file mode writes the path itself", engine: "redis", mode: "file", out: "/tmp/x.rdb",
 			cfg: config.Config{DBURI: "redis://h:6379"},
-			bin: "redis-cli", args: []string{"-h", "h", "-p", "6379", "--rdb", "-"},
+			bin: "redis-cli", args: []string{"-h", "h", "-p", "6379", "--rdb", "/tmp/x.rdb"},
 		},
 		{
 			name: "redis rejects directory", engine: "redis", mode: "directory",
-			cfg: config.Config{DBURI: "redis://h"}, wantErr: "only supports stream/file",
+			cfg: config.Config{DBURI: "redis://h"}, wantErr: "only supports file mode",
 		},
 	}
 	for _, tt := range tests {
@@ -179,7 +183,7 @@ func TestDumpCommand_CredentialsOutOfArgs(t *testing.T) {
 		{"mongo", config.Config{DBHost: "h", DBName: "db", DBUser: "u", DBPassword: pw}, "stream"},
 		{"mysql", config.Config{DBURI: "mysql://" + enc + "@h/db"}, "stream"},
 		{"mariadb", config.Config{DBHost: "h", DBName: "db", DBUser: "u", DBPassword: pw}, "file"},
-		{"redis", config.Config{DBURI: "redis://" + url.UserPassword("", pw).String() + "@h"}, "stream"},
+		{"redis", config.Config{DBURI: "redis://" + url.UserPassword("", pw).String() + "@h"}, "file"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.engine, func(t *testing.T) {

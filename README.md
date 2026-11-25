@@ -158,7 +158,7 @@ All options can be set via environment variables or CLI flags. In Docker mode, u
 | Variable | Flag | Required | Default | Description |
 |---|---|---|---|---|
 | `BACKUP_SCHEDULE` | `--backup-schedule` | No | `0 2 * * *` | Cron expression or `once` for a single backup |
-| `BACKUP_MODE` | `--backup-mode` | No | `stream` | `stream`, `directory`, `tar`, or `file` |
+| `BACKUP_MODE` | `--backup-mode` | No | `stream` (`file` for Redis) | `stream`, `directory`, `tar`, or `file` |
 | `BACKUP_NAME_TEMPLATE` | `--backup-name-template` | No | `{db}-{timestamp}` | Filename template |
 | `BACKUP_COMPRESS` | `--backup-compress` | No | `false` | Enable native compression via dump tool |
 | `BACKUP_EXTENSION` | `--backup-extension` | No | auto | Override file extension |
@@ -225,6 +225,8 @@ Post-backup hooks receive `DBSTASH_STATUS` (`success`/`failure`) and `DBSTASH_FI
 | **File** | `file` | Dumps to a temp file, uploads via `rclone copy` — same output format as stream but no concurrent upload | Requires temp space |
 | **Directory** | `directory` | Dumps to temp dir, uploads via `rclone copy` | Requires temp space |
 | **Tar** | `tar` | Dumps to temp dir, tar streams to `rclone rcat` | Requires temp space |
+
+Redis supports only `file` mode: on a diskless sync (the default since Redis 7) `redis-cli` removes the transfer's end marker by truncating its output file, which it cannot do on a stream.
 
 ### Compression
 

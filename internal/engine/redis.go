@@ -17,10 +17,12 @@ type Redis struct{}
 // Name returns "redis".
 func (r *Redis) Name() string { return "redis" }
 
-// DumpCommand builds the redis-cli command. Only stream mode is supported.
-func (r *Redis) DumpCommand(ctx context.Context, cfg *config.Config, mode string, _ string) (*exec.Cmd, func(), error) {
-	if mode != "stream" && mode != "file" {
-		return nil, nil, fmt.Errorf("redis only supports stream/file mode (got %q)", mode)
+// DumpCommand builds the redis-cli command. Only file mode is supported:
+// redis-cli strips the EOF marker of a diskless-sync transfer (the default
+// since Redis 7) by truncating its output, which it cannot do on stdout.
+func (r *Redis) DumpCommand(ctx context.Context, cfg *config.Config, mode string, outputFile string) (*exec.Cmd, func(), error) {
+	if mode != "file" {
+		return nil, nil, fmt.Errorf("redis only supports file mode (got %q)", mode)
 	}
 
 	var args []string
@@ -33,7 +35,7 @@ func (r *Redis) DumpCommand(ctx context.Context, cfg *config.Config, mode string
 		args = append(args, "-p", port)
 	}
 
-	args = append(args, "--rdb", "-")
+	args = append(args, "--rdb", outputFile)
 
 	// Extra args
 	if cfg.DumpExtraArgs != "" {
