@@ -18,6 +18,11 @@ backups=$(mktemp -d) stopped=$(mktemp -d)
 chmod 777 "$backups" "$stopped"
 
 cleanup() {
+	if [ $? -ne 0 ]; then
+		for c in "$db" "$restored" "$stopper"; do
+			docker logs --tail 20 "$c" 2>&1 | sed "s/^/[$c] /" || true
+		done
+	fi
 	docker rm -f "$db" "$stopper" "$restored" >/dev/null 2>&1 || true
 	docker network rm "$net" >/dev/null 2>&1 || true
 	# Files written by containers are root-owned.
@@ -88,10 +93,13 @@ mysql | mariadb)
 		-e "CREATE TABLE items (i INT); INSERT INTO items VALUES ($(seq -s '),(' 1 "$rows"));"
 	uri="mysql://root:$pw_uri@$db:3306/e2e"
 	compress=false
+	# Into a fresh server: MySQL dumps carry the source's GTID_PURGED, which
+	# the source itself rejects.
 	restore() {
-		in_db "$client" -h 127.0.0.1 -uroot -p"$pw" -e 'CREATE DATABASE restored'
-		docker exec -i "$db" "$client" -h 127.0.0.1 -uroot -p"$pw" restored <"$backups/$1"
-		in_db "$client" -h 127.0.0.1 -uroot -p"$pw" -N -e 'SELECT COUNT(*) FROM restored.items'
+		docker run -d --name "$restored" -e MYSQL_ROOT_PASSWORD="$pw" -e MYSQL_DATABASE=restored "$db_image" >/dev/null
+		retry docker exec "$restored" "$client" -h 127.0.0.1 -uroot -p"$pw" -e 'SELECT 1'
+		docker exec -i "$restored" "$client" -h 127.0.0.1 -uroot -p"$pw" restored <"$backups/$1"
+		docker exec "$restored" "$client" -h 127.0.0.1 -uroot -p"$pw" -N -e 'SELECT COUNT(*) FROM restored.items'
 	}
 	;;
 redis)
@@ -100,8 +108,11 @@ redis)
 	seq 1 "$rows" | awk '{ print "SET key:" $1 " " $1 }' | docker exec -i -e REDISCLI_AUTH="$pw" "$db" redis-cli >/dev/null
 	uri="redis://:$pw_uri@$db:6379"
 	compress=false
+	# Copied in, not bind-mounted: the entrypoint chowns everything in /data.
 	restore() {
-		docker run -d --name "$restored" -v "$backups/$1:/data/dump.rdb:ro" "$db_image" >/dev/null
+		docker create --name "$restored" "$db_image" >/dev/null
+		docker cp "$backups/$1" "$restored:/data/dump.rdb" >/dev/null 2>&1
+		docker start "$restored" >/dev/null
 		retry docker exec "$restored" redis-cli ping
 		docker exec "$restored" redis-cli dbsize
 	}
